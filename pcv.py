@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import cv2
+from threading import Thread
+
+waitKey = lambda ms : cv2.waitKey(ms) & 0xFF
 
 class ContextualVideoCapture(cv2.VideoCapture):
     ''' A cv2.VideoCapture with a context manager for releasing. '''
@@ -114,30 +117,53 @@ class VideoReader(ContextualVideoCapture):
         return f"VideoReader(filename={self.filename:!r})"
 
 
-class CamCorder(ContextualVideoCapture):
-    ''' A basic camera class for processing every frame. '''
+class SlowCamera(ContextualVideoCapture):
+    ''' A basic, slow camera class for processing frames relatively far apart.
+
+    Use 'Camera' instead unless you need to reduce power/CPU usage and the time
+    to read an image is insignificant in your processing pipeline.
+
+    '''
     properties={} # TODO camera-related properties
     def __init__(self, camera_id=0, *args, **kwargs):
         super().__init__(camera_id, *args, **kwargs)
         self._id = camera_id
 
 
-class Camera(CamCorder):
-    ''' A camera for always capturing the latest frame.
+class Camera(SlowCamera):
+    ''' A camera for always capturing the latest frame, fast.
 
-    Useful for processing pipelines that are slow enough that the buffer fills
-        between image reads and causes a buffersize/FPS delay.
+    Use this instead of 'SlowCamera', unless you need to reduce power/CPU
+    usage, and the time to read an image is insignificant in your processing
+    pipeline.
 
     '''
     def __init__(self, camera_id=0, *args, **kwargs):
         super().__init__(camera_id, *args, **kwargs)
-        # TODO set buffer size to 0/1?, and/or start thread for repeated grab
-        #   cycle with 'receive' called on the latest grab when calling
+        # TODO start thread for repeated grab
+        #   cycle with 'retrieve' called on the latest grab when calling
         #   __next__ or self.read
 
     def __next__(self):
         if self.isOpened():
             return self.retrieve()
+        raise StopIteration
 
-    
+
+class LockedCamera(Camera):
+    ''' A camera for asynchronously capturing a single image at a time.
+
+    Like 'Camera' but uses less power+CPU by only capturing a single frame per
+    iteration, and allows specifying when the next frame should start being
+    captured.
+
+    Images may be less recent than achieved with Camera, depending on when the
+    user starts the capture process within their processing pipeline, but can
+    also be more recent if started near the end of the pipeline (at the risk of
+    having to wait for the capturing to complete).
+
+    '''
+    pass # TODO locked thread execution
+
+
 
