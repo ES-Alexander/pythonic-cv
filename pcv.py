@@ -152,9 +152,16 @@ class SlowCamera(ContextualVideoCapture):
 
     '''
     properties={} # TODO camera-related properties
-    def __init__(self, camera_id=0, *args, **kwargs):
+    def __init__(self, camera_id=0, *args, delay=1, quit=ord('q'), **kwargs):
         super().__init__(camera_id, *args, **kwargs)
         self._id = camera_id
+        self._delay = delay
+        self._quit = quit
+
+    def __next__(self):
+        if self._delay is not None and waitKey(self._delay) == self._quit:
+            raise StopIteration
+        return super().__next__()
 
 
 class Camera(SlowCamera):
