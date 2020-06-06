@@ -153,6 +153,17 @@ class SlowCamera(ContextualVideoCapture):
     '''
     properties={} # TODO camera-related properties
     def __init__(self, camera_id=0, *args, delay=1, quit=ord('q'), **kwargs):
+        ''' Create a camera capture instance with the given id.
+
+        'delay' is the integer millisecond delay applied between each iteration
+            to enable windows to update. If set to None, this is skipped and
+            the user must manually call waitKey to update windows.
+            Default is 1 ms. For headless operation, set to None.
+        'quit' is an integer ordinal corresponding to a key which can be used
+            to stop the iteration loop. Only applies if delay is not None.
+            Default is ord('q'), so press the 'q' key to quit when iterating.
+
+        '''
         super().__init__(camera_id, *args, **kwargs)
         self._id = camera_id
         self._delay = delay
