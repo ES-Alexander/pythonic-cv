@@ -1,18 +1,37 @@
 #!/usr/bin/env python3
 
 import cv2
+import numpy as np
+from time import time
 from threading import Thread, Lock
 
 waitKey = lambda ms : cv2.waitKey(ms) & 0xFF
+
+class OutOfFrames(StopIteration):
+    def __init__(msg='Out of video frames', *args, **kwargs):
+        super().__init__(msg, *args, **kwargs)
 
 class ContextualVideoCapture(cv2.VideoCapture):
     ''' A cv2.VideoCapture with a context manager for releasing. '''
     properties={}
 
-    def __init__(self, id, windows=None, *args, **kwargs):
-        ''' Destroys window on context exit, if specified, or 'all'. '''
+    def __init__(self, id, windows=None, *args, delay=None, quit=ord('q'),
+                 **kwargs):
+        ''' Destroys window on context exit, if specified, or 'all'.
+
+        'delay' is the integer millisecond delay applied between each iteration
+            to enable windows to update. If set to None, this is skipped and
+            the user must manually call waitKey to update windows.
+            Default is 1 ms. For headless operation, set to None.
+        'quit' is an integer ordinal corresponding to a key which can be used
+            to stop the iteration loop. Only applies if delay is not None.
+            Default is ord('q'), so press the 'q' key to quit when iterating.
+
+        '''
         super().__init__(id, *args, **kwargs)
         self._windows = windows
+        self._delay   = delay
+        self._quit    = quit
 
     def __enter__(self):
         return self
@@ -40,6 +59,8 @@ class ContextualVideoCapture(cv2.VideoCapture):
         return self
 
     def __next__(self):
+        if self._delay is not None and waitKey(self._delay) == self._quit:
+            raise StopIteration # user quit manually
         if self.isOpened():
             return self.read()
         raise StopIteration # out of frames
@@ -59,90 +80,6 @@ class ContextualVideoCapture(cv2.VideoCapture):
             return super().set(eval('cv2.CAP_PROP_'+property.upper))
 
 
-class VideoReader(ContextualVideoCapture):
-    ''' A class for reading video files. '''
-    properties = {
-        'fps'        : cv2.CAP_PROP_FPS,
-        'timestamp'  : cv2.CAP_PROP_POS_MSEC,
-        'frame'      : cv2.CAP_PROP_POS_FRAMES,
-        'proportion' : cv2.CAP_PROP_POS_AVI_RATIO,
-        # TODO the rest
-        # https://docs.opencv.org/3.4/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
-    }
-
-    def __init__(self, filename, *args, start=None, **kwargs):
-        ''' Initialise a video reader from the given file. '''
-        super().__init__(filename, *args, **kwargs)
-        self.filename = filename
-        if start is not None:
-            self.set_timestamp(start)
- 
-    @property
-    def fps(self):
-        ''' The constant FPS assumed of the video file. '''
-        return self.get('fps')
-
-    @property
-    def frame(self):
-        return self.get('frame')
-
-    def set_frame(self, frame):
-        ''' Attempts to set the frame number, returns success.
-
-        'frame' is an integer that must be less than TODO MAX_FRAMES.
-
-        self.set_frame(int) -> bool
-
-        '''
-        return self.set('frame', frame)
-
-    @property
-    def timestamp(self):
-        ''' Returns the video timestamp if possible, else 0.0. '''
-        # cv2.VideoCapture returns ms timestamp -> convert to meaningful time
-        seconds          = self.get('timestamp') / 1000
-        minutes, seconds = divmod(seconds, 60)
-        hours, minutes   = divmod(minutes, 60)
-        output = ''
-        if hours:
-            return f'{hours}:{minutes}:{seconds:.3f}'
-        if minutes:
-            return f'{minutes}:{seconds:.3f}'
-        return '{seconds:.3f}s'
-
-    def set_timestamp(self, timestamp):
-        ''' Attempts to set the timestamp as specified, returns success.
-
-        'timestamp' can be a float/integer of milliseconds, or a string
-            of 'hours:minutes:seconds', 'minutes:seconds', or 'seconds',
-            where all values can be integers or floats.
-
-        self.set_timestamp(str/float/int) -> bool
-
-        '''
-        if isinstance(timestamp, str):
-            timestamp = sum(60 ** index * period \
-                            for index, period in timestamp.split(':'))
-        return self.set('timestamp', timestamp)
-
-    @property
-    def proportion(self):
-        ''' Returns the progress of the video as a float between 0 and 1. '''
-        return self.get('proportion')
-
-    def set_proportion(self, proportion):
-        ''' Attempts to set the video progress proportion, returns success.
-
-        'proportion' is a float value between 0 and 1.
-
-        self.set_proportion(float) -> bool
-
-        '''
-        return self.set('proportion', proportion)
-
-    def __repr__(self):
-        return f"VideoReader(filename={self.filename:!r})"
-
 
 class SlowCamera(ContextualVideoCapture):
     ''' A basic, slow camera class for processing frames relatively far apart.
@@ -152,27 +89,15 @@ class SlowCamera(ContextualVideoCapture):
 
     '''
     properties={} # TODO camera-related properties
-    def __init__(self, camera_id=0, *args, delay=1, quit=ord('q'), **kwargs):
+    def __init__(self, camera_id=0, *args, delay=1, **kwargs):
         ''' Create a camera capture instance with the given id.
 
-        'delay' is the integer millisecond delay applied between each iteration
-            to enable windows to update. If set to None, this is skipped and
-            the user must manually call waitKey to update windows.
-            Default is 1 ms. For headless operation, set to None.
-        'quit' is an integer ordinal corresponding to a key which can be used
-            to stop the iteration loop. Only applies if delay is not None.
-            Default is ord('q'), so press the 'q' key to quit when iterating.
-
         '''
-        super().__init__(camera_id, *args, **kwargs)
+        super().__init__(camera_id, *args, delay=delay, **kwargs)
         self._id = camera_id
-        self._delay = delay
-        self._quit = quit
 
-    def __next__(self):
-        if self._delay is not None and waitKey(self._delay) == self._quit:
-            raise StopIteration
-        return super().__next__()
+    def __repr__(self):
+        return f"{self.__class__.__name__}(camera_id={self._id:!r})"
 
 
 class Camera(SlowCamera):
@@ -206,9 +131,10 @@ class Camera(SlowCamera):
 class LockedCamera(Camera):
     ''' A camera for semi-synchronously capturing a single image at a time.
 
-    Like 'Camera' but uses less power+CPU by only capturing a single frame per
-    iteration, and allows specifying when the next frame should start being
-    captured.
+    Like 'Camera' but uses less power+CPU by only capturing images on request.
+    Allows specifying when each image should start being captured, then doing
+    some processing while the image is being grabbed and decoded (and
+    optionally pre-processed), before using it.
 
     Images may be less recent than achieved with Camera, depending on when the
     user starts the capture process within their processing pipeline, but can
@@ -277,3 +203,192 @@ class LockedCamera(Camera):
         self._get_latest_image()
         self._wait_for_camera_image()
         return True, self._frame
+
+
+class VideoReader(LockedCamera):
+    ''' A class for reading video files. '''
+    properties = {
+        'fps'        : cv2.CAP_PROP_FPS,
+        'timestamp'  : cv2.CAP_PROP_POS_MSEC,
+        'frame'      : cv2.CAP_PROP_POS_FRAMES,
+        'proportion' : cv2.CAP_PROP_POS_AVI_RATIO,
+        # TODO the rest
+        # https://docs.opencv.org/3.4/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
+    }
+
+    def __init__(self, filename, *args, start=None, delay=-1, fps=None,
+                 preprocess=None, **kwargs):
+        ''' Initialise a video reader from the given file.
+
+        'delay' can be set manually to ms between each iteration. If set to -1,
+            is automatically set using the video FPS. Set to None if operating
+            headless (not viewing the video)
+
+        'preprocess' is an optional function which takes an image and returns
+            a modified image. Defaults to no preprocessing.
+
+        '''
+        super().__init__(filename, *args, delay=delay, **kwargs)
+        self._fps = fps or self.fps # user-specified or auto-retrieved
+        self._period = 1e3 / self._fps
+
+        # handle delay automatic option
+        if delay == -1:
+            if self._fps == 0 or self._fps >= 1e3:
+                print('failed to determine fps, setting delay to 25ms')
+                self._delay  = 25
+                self._period = self._delay
+            else:
+                self._delay = int(self._period)
+                print('delay set automatically to',
+                      f'{self._delay}ms from FPS={self._fps}')
+
+        self.filename = filename
+        if start is not None:
+            if self.set_timestamp(start):
+                print(f'starting at {start}')
+            else:
+                print('start specification failed, starting at 0:00')
+
+        if preprocess is not None:
+            self._preprocess = preprocess
+        self._prev_frame = super().read()[1]
+
+    def _grabber(self):
+        ''' Grab images on demand, ready for later usage '''
+        try:
+            super()._grabber()
+        except IOError:
+            self._frame = None
+            self._inform_image_ready()
+
+    @property
+    def fps(self):
+        ''' The constant FPS assumed of the video file. '''
+        return self.get('fps')
+
+    @property
+    def frame(self):
+        return self.get('frame')
+
+    def set_frame(self, frame):
+        ''' Attempts to set the frame number, returns success.
+
+        'frame' is an integer that must be less than TODO MAX_FRAMES.
+
+        self.set_frame(int) -> bool
+
+        '''
+        return self.set('frame', frame)
+
+    @property
+    def timestamp(self):
+        ''' Returns the video timestamp if possible, else 0.0. '''
+        # cv2.VideoCapture returns ms timestamp -> convert to meaningful time
+        seconds          = self.get('timestamp') / 1000
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes   = divmod(minutes, 60)
+        output = ''
+        if hours:
+            return f'{hours}:{minutes}:{seconds:.3f}'
+        if minutes:
+            return f'{minutes}:{seconds:.3f}'
+        return '{seconds:.3f}s'
+
+    def set_timestamp(self, timestamp):
+        ''' Attempts to set the timestamp as specified, returns success.
+
+        'timestamp' can be a float/integer of milliseconds, or a string
+            of 'hours:minutes:seconds', 'minutes:seconds', or 'seconds',
+            where all values can be integers or floats.
+
+        self.set_timestamp(str/float/int) -> bool
+
+        '''
+        if isinstance(timestamp, str):
+            # convert string to seconds
+            timestamp = sum(60 ** index * float(period) for index, period \
+                            in enumerate(reversed(timestamp.split(':'))))
+            timestamp *= 1000
+        fps = self._fps
+        if fps == 0:
+            # fps couldn't be determined - set ms directly and hope
+            return self.set('timestamp', timestamp)
+        return self.set_frame(int(timestamp * fps / 1e3))
+
+    @property
+    def proportion(self):
+        ''' Returns the progress of the video as a float between 0 and 1. '''
+        return self.get('proportion')
+
+    def set_proportion(self, proportion):
+        ''' Attempts to set the video progress proportion, returns success.
+
+        'proportion' is a float value between 0 and 1.
+
+        self.set_proportion(float) -> bool
+
+        '''
+        return self.set('proportion', proportion)
+
+    def read(self):
+        self._get_latest_image()
+        cv2.imshow('video', self._prev_frame)
+        self._wait_for_camera_image()
+        if self._frame is None:
+            raise OutOfFrames
+        self._prev_frame = self._frame
+        return True, self._frame
+
+    def play(self):
+        for read_success, frame in self: pass
+
+    def __iter__(self):
+        if self._delay is not None:
+            self._prev  = time()
+            self._error = 0
+            self._delay = 1
+        return self
+
+    def __next__(self):
+        if self._delay is not None:
+            # auto-adjust to get closer to desired fps
+            now = time()
+            diff = 1e3 * (now - self._prev)
+            self._error += diff - self._period
+            mag = abs(self._error)
+            if mag > 1:
+                sign = np.sign(self._error)
+                delay_change, new_error_mag = divmod(mag, 1)
+                self._delay -= int(sign * delay_change)
+                self._error = sign * (new_error_mag % self._period)
+                if self._delay < 1:
+                    self._error += 1 - self._delay
+                    self._delay = 1
+            self._prev = now
+        return super().__next__()
+
+    def __repr__(self):
+        return f"VideoReader(filename={self.filename:!r})"
+
+
+if __name__ == '__main__':
+    # get minimum float value to avoid zero-division error
+    from sys import float_info
+    epsilon = float_info.epsilon
+
+    # define a full-scale adjust as a pre-processing function
+    def imadjust(img):
+        ''' adjust img to its min scaled to 0, and max scaled to 1. '''
+        low_in = img.min()
+        high_in = 255 #img.max()
+        return (img - low_in) / (high_in - low_in + epsilon)
+
+    with VideoReader('22.m4v', start='1:40', preprocess=imadjust) as vid:
+        vid.play()
+
+        """
+        # write each frame to a separate image
+        for index, (read_success, frame) in enumerate(vid):
+            cv2.imwrite(f'images/{index}.png', frame)
+        """
