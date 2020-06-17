@@ -70,7 +70,12 @@ class ContextualVideoCapture(cv2.VideoCapture):
             if key == self._quit:
                 raise StopIteration # user quit manually
             elif key == self._play_pause:
-                while waitKey(1) != self._play_pause: pass
+                while "paused":
+                    key = waitKey(1)
+                    if key == self._quit:
+                        raise StopIteration
+                    if key == self._play_pause:
+                        break
         if self.isOpened():
             return self.read()
         raise StopIteration # out of frames
