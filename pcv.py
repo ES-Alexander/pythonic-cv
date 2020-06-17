@@ -7,6 +7,10 @@ from threading import Thread, Lock
 
 waitKey = lambda ms : cv2.waitKey(ms) & 0xFF
 
+def downsize(img, ratio):
+    return cv2.resize(img, tuple(np.array(img.shape[:2][::-1]) // ratio),
+                      0, 0, cv2.INTER_AREA)
+
 class OutOfFrames(StopIteration):
     def __init__(msg='Out of video frames', *args, **kwargs):
         super().__init__(msg, *args, **kwargs)
