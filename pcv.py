@@ -16,7 +16,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
     properties={}
 
     def __init__(self, id, windows=None, *args, delay=None, quit=ord('q'),
-                 **kwargs):
+                 play_pause=ord('p'), **kwargs):
         ''' Destroys window on context exit, if specified, or 'all'.
 
         'delay' is the integer millisecond delay applied between each iteration
@@ -26,12 +26,18 @@ class ContextualVideoCapture(cv2.VideoCapture):
         'quit' is an integer ordinal corresponding to a key which can be used
             to stop the iteration loop. Only applies if delay is not None.
             Default is ord('q'), so press the 'q' key to quit when iterating.
+        'play_pause' is an integer ordinal corresponding to a key which can be
+            used to pause and resume the iteration loop. Only applies if delay
+            is not None. Default is ord('p'), so press 'p' to pause/resume when
+            iterating.
 
         '''
         super().__init__(id, *args, **kwargs)
         self._windows = windows
         self._delay   = delay
         self._quit    = quit
+        self._play_pause = play_pause
+
 
     def __enter__(self):
         return self
@@ -59,8 +65,12 @@ class ContextualVideoCapture(cv2.VideoCapture):
         return self
 
     def __next__(self):
-        if self._delay is not None and waitKey(self._delay) == self._quit:
-            raise StopIteration # user quit manually
+        if self._delay is not None:
+            key = waitKey(self._delay)
+            if key == self._quit:
+                raise StopIteration # user quit manually
+            elif key == self._play_pause:
+                while waitKey(1) != self._play_pause: pass
         if self.isOpened():
             return self.read()
         raise StopIteration # out of frames
@@ -223,6 +233,7 @@ class VideoReader(LockedCamera):
         'delay' can be set manually to ms between each iteration. If set to -1,
             is automatically set using the video FPS. Set to None if operating
             headless (not viewing the video)
+        TODO fps documentation (auto-adjustment of delay)
 
         'preprocess' is an optional function which takes an image and returns
             a modified image. Defaults to no preprocessing.
@@ -373,22 +384,6 @@ class VideoReader(LockedCamera):
 
 
 if __name__ == '__main__':
-    # get minimum float value to avoid zero-division error
-    from sys import float_info
-    epsilon = float_info.epsilon
-
-    # define a full-scale adjust as a pre-processing function
-    def imadjust(img):
-        ''' adjust img to its min scaled to 0, and max scaled to 1. '''
-        low_in = img.min()
-        high_in = 255 #img.max()
-        return (img - low_in) / (high_in - low_in + epsilon)
-
-    with VideoReader('22.m4v', start='1:40', preprocess=imadjust) as vid:
-        vid.play()
-
-        """
-        # write each frame to a separate image
-        for index, (read_success, frame) in enumerate(vid):
-            cv2.imwrite(f'images/{index}.png', frame)
-        """
+    with Camera(0) as cam:
+        for read_success, frame in cam:
+            cv2.imshow('frame', frame)
