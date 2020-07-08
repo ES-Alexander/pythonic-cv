@@ -60,7 +60,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
     properties={}
 
     def __init__(self, id, windows=None, *args, delay=None, quit=ord('q'),
-                 play_pause=ord('p'), **kwargs):
+                 play_pause=ord(' '), **kwargs):
         ''' Destroys window on context exit, if specified, or 'all'.
 
         'delay' is the integer millisecond delay applied between each iteration
@@ -72,8 +72,8 @@ class ContextualVideoCapture(cv2.VideoCapture):
             Default is ord('q'), so press the 'q' key to quit when iterating.
         'play_pause' is an integer ordinal corresponding to a key which can be
             used to pause and resume the iteration loop. Only applies if delay
-            is not None. Default is ord('p'), so press 'p' to pause/resume when
-            iterating.
+            is not None. Default is ord(' '), so press space-bar to pause/
+            resume when iterating.
 
         '''
         super().__init__(id, *args, **kwargs)
