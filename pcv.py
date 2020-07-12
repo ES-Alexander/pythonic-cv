@@ -55,14 +55,18 @@ class OutOfFrames(StopIteration):
     def __init__(msg='Out of video frames', *args, **kwargs):
         super().__init__(msg, *args, **kwargs)
 
+
 class ContextualVideoCapture(cv2.VideoCapture):
     ''' A cv2.VideoCapture with a context manager for releasing. '''
     properties={}
 
     def __init__(self, id, windows=None, *args, delay=None, quit=ord('q'),
-                 play_pause=ord(' '), **kwargs):
+                 play_pause=ord(' '), pause_effects={}, **kwargs):
         ''' Destroys window on context exit, if specified, or 'all'.
 
+        'id' is the id that gets passed to the underlying VideoCapture object.
+            it can be an integer to select a connected camera, or a filename
+            to open a video
         'delay' is the integer millisecond delay applied between each iteration
             to enable windows to update. If set to None, this is skipped and
             the user must manually call waitKey to update windows.
@@ -74,6 +78,14 @@ class ContextualVideoCapture(cv2.VideoCapture):
             used to pause and resume the iteration loop. Only applies if delay
             is not None. Default is ord(' '), so press space-bar to pause/
             resume when iterating.
+        'pause_effects' is a dictionary of key ordinals and corresponding
+            handler functions. The handler will be passed self as its only
+            argument, which gives it access to the 'get' and 'set' methods,
+            as well as the 'status' and 'image' properties from the last 'read'
+            call. This can be useful for logging, selecting images for
+            labelling, or temporary manual control of the event/read loop.
+            Note that this is only used while paused, and does not get passed
+            quit or pause key events.
 
         '''
         super().__init__(id, *args, **kwargs)
@@ -81,7 +93,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
         self._delay   = delay
         self._quit    = quit
         self._play_pause = play_pause
-
+        self._pause_effects = pause_effects
 
     def __enter__(self):
         return self
@@ -101,28 +113,39 @@ class ContextualVideoCapture(cv2.VideoCapture):
         if windows == 'all':
             cv2.destroyAllWindows()
         elif isinstance(windows, str):
+            # a single window name
             cv2.destroyWindow(windows)
         elif windows is not None:
+            # assume an iterable of multiple windows
             for w in windows: cv2.destroyWindow(w)
 
     def __iter__(self):
         return self
 
     def __next__(self):
+        # check if doing automatic waits
         if self._delay is not None:
             key = waitKey(self._delay)
             if key == self._quit:
                 raise StopIteration # user quit manually
             elif key == self._play_pause:
-                while "paused":
-                    key = waitKey(1)
-                    if key == self._quit:
-                        raise StopIteration
-                    if key == self._play_pause:
-                        break
+                self._handle_pause()
+        # wait completed, get next frame if possible
         if self.isOpened():
             return self.read()
-        raise StopIteration # out of frames
+        # out of frames
+        raise StopIteration
+
+    def _handle_pause(self):
+        ''' Handle event loop and key-presses while paused. '''
+        while "paused":
+            key = waitKey(1)
+            if key == self._quit:
+                raise StopIteration
+            if key == self._play_pause:
+                break
+            # pass self to a triggered user-defined key handler, or do nothing
+            self._pause_effects.get(key, lambda cap: None)(self)
 
     def get(self, property):
         ''' Return the value of 'property' if it exists, else 0.0. '''
@@ -138,6 +161,9 @@ class ContextualVideoCapture(cv2.VideoCapture):
         except TypeError: # 'property' must be an unknown string
             return super().set(eval('cv2.CAP_PROP_'+property.upper))
 
+    def read(self):
+        self.status, self.image = super().read()
+        return self.status, self.image
 
 
 class SlowCamera(ContextualVideoCapture):
