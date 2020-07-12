@@ -239,12 +239,12 @@ class LockedCamera(Camera):
         while "running":
             self._wait_until_needed()
             # read the latest frame
-            read_success, frame = ContextualVideoCapture.read(self)
+            read_success, frame = super(Camera, self).read()
             if not read_success:
                 raise IOError('Failure to read frame from camera.')
 
             # apply any desired pre-processing and store for main thread
-            self._frame = self._preprocess(frame)
+            self.image = self._preprocess(frame)
             # inform that image is ready for access/main processing
             self._inform_image_ready()
 
@@ -287,7 +287,7 @@ class LockedCamera(Camera):
         '''
         self._get_latest_image()
         self._wait_for_camera_image()
-        return True, self._frame
+        return True, self.image
 
 
 class VideoReader(LockedCamera):
@@ -345,7 +345,7 @@ class VideoReader(LockedCamera):
         try:
             super()._grabber()
         except IOError:
-            self._frame = None
+            self.image = None
             self._inform_image_ready()
 
     @property
@@ -421,10 +421,10 @@ class VideoReader(LockedCamera):
         self._get_latest_image()
         cv2.imshow('video', self._prev_frame)
         self._wait_for_camera_image()
-        if self._frame is None:
+        if self.image is None:
             raise OutOfFrames
-        self._prev_frame = self._frame
-        return True, self._frame
+        self._prev_frame = self.image
+        return True, self.image
 
     def play(self):
         for read_success, frame in self: pass
@@ -462,3 +462,4 @@ if __name__ == '__main__':
     with Camera(0) as cam:
         for read_success, frame in cam:
             cv2.imshow('frame', frame)
+   
