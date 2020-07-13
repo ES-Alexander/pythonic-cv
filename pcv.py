@@ -355,7 +355,7 @@ class VideoReader(LockedCamera):
 
     @property
     def frame(self):
-        return self.get('frame')
+        return int(self.get('frame'))
 
     def set_frame(self, frame):
         ''' Attempts to set the frame number, returns success.
