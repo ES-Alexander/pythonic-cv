@@ -2,12 +2,19 @@
 OpenCV is a fantastic tool for computer vision, with full support in Python
 through its automatically generated bindings. Unfortunately some basic functionality
 is frustrating to use, and documentation is sparse and fragmented as to how best to
-approach even simple tasks such as efficiently processing a webcam feed.  
+approach even simple tasks such as efficiently processing a webcam feed.
 
-This library aims to address frustrations in the openCV python api that can be
+This library aims to address frustrations in the OpenCV Python api that can be
 fixed using pythonic constructs and methodologies. Solutions are not guaranteed to
 be optimal, but every effort has been made to make the code as performant as
 possible while ensuring ease of use and helpful errors/documentation.
+
+# Requirements
+This library requires an existing version of OpenCV with Python bindings to be 
+installed (e.g. `python3 -m pip install opencv-python`). Some features (mainly
+property access helpers) may not work for versions of OpenCV earlier than 4.2.0. 
+The library was tested using Python 3.7.2, and is expected to work down to at least
+Python 3.4.
 
 # Usage
 New functionality is provided in the `pcv` module, as described below. All other 
@@ -21,7 +28,7 @@ and optional automatic waitKey delay and iteration quit key. The simplest of the
 `SlowCamera`, which has slow iteration because image grabbing is performed 
 synchronously, with a blocking call while reading each frame. `Camera` extends 
 `SlowCamera` with additional logic to perform repeated grabbing in a separate thread,
-and ensure the camera is always retrieving the latest frame. `LockedCamera` sits
+so processing and image grabbing can occur concurrently. `LockedCamera` sits
 between the two, providing thread based I/O but with more control over when each image
 is taken.
 
@@ -50,29 +57,47 @@ If using a video file to simulate a live camera stream, use `SlowCamera` or
 TODO
 
 ## Examples
-### VideoReader
-```python
-# TODO
-```
-
 ### Basic Camera Stream
 ```python
 import cv2
-from pcv import Camera
+from pcv import Camera, channel_options, downsize
 
-# start streaming camera 0 (generally laptop webcam/primary camera)
-# auto-initialised to have 1ms waitKey between iterations, breaking on 'q' keypress
-with Camera(0) as cam:
-    for read_success, frame in cam:
-        cv2.imshow('frame', frame)
+# start streaming camera 0 (generally laptop webcam/primary camera), and destroy 'frame'
+#   window (default streaming window) when finished.
+# Auto-initialised to have 1ms waitKey between iterations, breaking on 'q' key-press,
+#   and play/pause using the spacebar.
+with Camera(0, windows='frame') as cam:
+    cam.stream()
+
+# stream camera 0 on window 'channels', downsized and showing all available channels.
+display_window='channels'
+with Camera(0, windows=display_window, 
+            preprocess=lambda img: channel_options(downsize(img, 4))) as cam:
+    cam.stream(display_window)
 ```
 
-### SlowCamera
+### VideoReader
 ```python
-# TODO
-```
+import cv2
+from pcv import VideoReader, downsize
 
-### LockedCamera (Advanced)
-```python
-# TODO
+# just play (simple)
+with VideoReader('my_vid.mp4') as vid:
+    vid.play()
+    
+# start 15 seconds in, end at 1:32, downsize the video by a factor of 4
+with VideoReader('my_vid.mp4', start='15', end='1:32', 
+                 preprocess=lambda img: downsize(img, 4)) as vid:
+    vid.play()
+    
+# enable rewinding and super fast playback
+# Press 'a' to rewind, 'd' to go forwards, 'w' to speed up, 's' to slow down
+#    and 'r' to reset to forwards at 1x speed.
+with VideoReader('my_vid.mp4', skip_frames=0) as vid:
+    vid.play()
+    
+# headless mode (no display), operating on every 10th frame
+with VideoReader('my_vid.mp4', auto_delay=False, skip_frames=10,
+                 preprocess=my_processing_func) as vid:
+    vid.play()
 ```
