@@ -72,7 +72,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
         'height'  : cv2.CAP_PROP_FRAME_HEIGHT,
         'backend' : cv2.CAP_PROP_BACKEND,
     }
-    # the rest can be found at the following url:
+    # more properties + descriptions can be found in the docs:
     # https://docs.opencv.org/3.4/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
 
     def __init__(self, id, windows=None, *args, delay=None, quit=ord('q'),
@@ -377,6 +377,8 @@ class VideoReader(LockedCamera):
         if preprocess is not None:
             self._preprocess = preprocess
 
+        self._prev_frame = super().read()[1]
+
     def _initialise_delay(self, auto_delay):
         ''' Determines the delay automatically, or leaves as None. '''
         if auto_delay:
@@ -410,8 +412,6 @@ class VideoReader(LockedCamera):
             self.RESET   : self._reset,
         }
 
-        self._prev_frame = super().read()[1]
-
     def _set_start(self, start):
         ''' Set the start of the video to user specification, if possible. '''
         if start is not None:
@@ -430,20 +430,23 @@ class VideoReader(LockedCamera):
                 self._end = self.timestamp_to_ms(end)
             else:
                 self._end = end
+            self._end /= self._period # convert to number of frames
         else:
             self._end = np.inf
 
     def _speed_up(self):
         ''' Increase the speed by 10% of the initial value. '''
         self._speed += 0.1
-        self._calculate_period()
-        print(f'speed set to {self._speed:.2f} x starting fps')
- 
+        self._register_speed_change()
+
     def _slow_down(self):
         ''' Reduce the speed by 10% of the initial value. '''
         self._speed -= 0.1
+        self._register_speed_change()
+
+    def _register_speed_change(self):
         self._calculate_period()
-        print(f'speed set to {self._speed:.2f} x starting fps')
+        print(f'speed set to {self._speed:.1f}x starting fps') 
 
     def _calculate_period(self):
         ''' Determine the adjusted period given the speed. '''
@@ -453,7 +456,7 @@ class VideoReader(LockedCamera):
     def _calculate_timestep(self):
         ''' Determine the desired timestep of each iteration. '''
         self._timestep = self._adjusted_period * self._frames
-    
+
     def _calculate_frames(self):
         ''' Determine the number of frames to increment each iteration. '''
         self._frames = (1 + self._skip_frames
@@ -590,17 +593,8 @@ class VideoReader(LockedCamera):
 
             key = waitKey(self._delay)
             self._handle_playback(key)
-
-        # frame skip with no auto-delay allows continual frame skipping
-        # only set frame if necessary (moving one frame ahead isn't helpful)
-        if self._skip_frames is not None and \
-           (self._direction == -1 or self._frames != 1):
-            self.set_frame(self._frame + self._frames * self._direction)
         else:
-            self._frame += 1
-
-        if self._frame > self._end:
-            raise OutOfFrames
+            self._update_frame_tracking()
 
         return super().__next__(key=key)
 
@@ -629,6 +623,8 @@ class VideoReader(LockedCamera):
                 self._skip_frames += int(sign * skip_frames_change)
                 self._calculate_frames() # update internals
 
+            self._update_frame_tracking()
+
             self._error = sign * new_error_mag
             if self._delay < self.MIN_DELAY:
                 self._error += self.MIN_DELAY - self._delay
@@ -636,6 +632,18 @@ class VideoReader(LockedCamera):
 
     def _handle_playback(self, key):
         self._playback_commands.get(key, lambda : None)()
+
+    def _update_frame_tracking(self):
+        # frame skip with no auto-delay allows continual frame skipping
+        # only set frame if necessary (moving one frame ahead isn't helpful)
+        if self._skip_frames is not None and \
+           (self._direction == -1 or self._frames != 1):
+            self.set_frame(self._frame + self._frames * self._direction)
+        else:
+            self._frame += 1
+
+        if self._frame > self._end:
+            raise OutOfFrames
 
     def __repr__(self):
         return f"VideoReader(filename={self.filename:!r})"
