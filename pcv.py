@@ -77,8 +77,12 @@ class ContextualVideoCapture(cv2.VideoCapture):
 
     def __init__(self, id, windows=None, *args, delay=None, quit=ord('q'),
                  play_pause=ord(' '), pause_effects={}, **kwargs):
-        ''' Destroys window on context exit, if specified, or 'all'.
+        ''' A pausable, quitable, iterable video-capture object
+            with context management.
 
+        'windows' destroys any specified windows on context exit. Can be 'all'
+            to destroy all active opencv windows, a string of a specific window
+            name, or a list of window names to close.
         'id' is the id that gets passed to the underlying VideoCapture object.
             it can be an integer to select a connected camera, or a filename
             to open a video
@@ -198,6 +202,10 @@ class SlowCamera(ContextualVideoCapture):
         '''
         super().__init__(camera_id, *args, delay=delay, **kwargs)
         self._id = camera_id
+
+    def stream(self, window='frame'):
+        for read_success, frame in self:
+            cv2.imshow(window, frame)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(camera_id={self._id:!r})"
@@ -323,7 +331,8 @@ class VideoReader(LockedCamera):
     MIN_DELAY = 1 # delay is integer milliseconds
 
     def __init__(self, filename, *args, start=None, end=None, auto_delay=True,
-                 fps=None, skip_frames=None, preprocess=None, **kwargs):
+                 fps=None, skip_frames=None, preprocess=None,
+                 display_window='video', **kwargs):
         ''' Initialise a video reader from the given file.
 
         'filename' is the string path of a video file. Depending on the file
@@ -359,6 +368,9 @@ class VideoReader(LockedCamera):
             time-dependent processing.
         'preprocess' is an optional function which takes an image and returns
             a modified image. Defaults to no preprocessing.
+        'display_window' is the string name of the window to display the
+            video in (if auto_delay is True) when iterating over the instance
+            or using the 'play' method. Defaults to 'video'.
 
         *args and **kwargs get passed up the inheritance chain, with notable
             keywords including the 'quit' and 'play_pause' key ordinals which
@@ -367,12 +379,15 @@ class VideoReader(LockedCamera):
             paused (see ContextualVideoCapture documentation for details).
 
         '''
+        # destroy display_window unless asked not to
+        kwargs = {'windows':display_window, **kwargs}
         super().__init__(filename, *args, **kwargs)
         self.filename = filename
         self._fps = fps or self.fps # user-specified or auto-retrieved
         self._period = 1e3 / self._fps
         self._initialise_delay(auto_delay)
         self._initialise_playback(start, end, skip_frames)
+        self.display_window = display_window
 
         if preprocess is not None:
             self._preprocess = preprocess
@@ -564,7 +579,7 @@ class VideoReader(LockedCamera):
     def read(self):
         self._get_latest_image()
         if self._delay is not None:
-            cv2.imshow('video', self._prev_frame)
+            cv2.imshow(self.display_window, self._prev_frame)
         self._wait_for_camera_image()
         if self.image is None:
             raise OutOfFrames
@@ -651,6 +666,9 @@ class VideoReader(LockedCamera):
 
 
 if __name__ == '__main__':
+    with VideoReader('testing/22.m4v', windows='all') as vid:
+        vid.play()
+
     with Camera(0) as cam:
         for read_success, frame in cam:
             cv2.imshow('frame', frame)
