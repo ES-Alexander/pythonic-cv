@@ -20,7 +20,7 @@ Python 3.4.
 New functionality is provided in the `pcv` module, as described below. All other 
 opencv functionality should be accessed through the standard `cv2` import.
 
-The main implemented functionality is allowing video input through a context manager, 
+The main implemented functionality is handling video through a context manager, 
 while also enabling iteration over the input stream. While iterating, key-bindings
 have been set up for play/pause (`SPACE`) and stopping playback (`q`). A dictionary
 of pause_effects can be passed in to add additional key-bindings while paused without
@@ -28,14 +28,14 @@ needing to create a subclass. In addition, video playback can be sped up with `w
 slowed down with `s`, and if enabled allows rewinding with `a` and returning to
 forwards playback with `d`. Forwards playback at 1x speed can be restored with `r`.
 
-For reading video files, the `VideoReader` class should be used. For streaming, the 
-classes `Camera`, `SlowCamera`, and `LockedCamera` are provided. The simplest of these 
-is `SlowCamera`, which has slow iteration because image grabbing is performed 
-synchronously, with a blocking call while reading each frame. `Camera` extends
-`SlowCamera` with additional logic to perform repeated grabbing in a separate thread,
-so processing and image grabbing can occur concurrently. `LockedCamera` sits
-between the two, providing thread based I/O but with more control over when each image
-is taken.
+For reading and writing video files, the `VideoReader` and `VideoWriter` classes should 
+be used. For streaming, the classes `Camera`, `SlowCamera`, and `LockedCamera` are 
+provided. The simplest of these is `SlowCamera`, which has slow iteration because image
+grabbing is performed synchronously, with a blocking call while reading each frame. 
+`Camera` extends `SlowCamera` with additional logic to perform repeated grabbing in a
+separate thread, so processing and image grabbing can occur concurrently. `LockedCamera`
+sits between the two, providing thread based I/O but with more control over when each 
+image is taken.
 
 `Camera` is most useful for applications with processing speeds that require the most
 up to date information possible and don't want to waste time decoding frames that are
@@ -79,6 +79,24 @@ display_window='channels'
 with Camera(0, windows=display_window, 
             preprocess=lambda img: channel_options(downsize(img, 4))) as cam:
     cam.stream(display_window)
+```
+
+### Stream and Record
+```python
+import cv2
+from pcv import Camera, VideoWriter
+
+out_file = 'me.mp4'
+with Camera(0) as cam, VideoWriter(out_file,
+        VideoWriter.suggested_codec(out_file), cam.get('fps'),
+            (int(cam.get('width')), int(cam.get('height')))) as writer:
+    print("press 'q' to quit.")
+    for read_success, frame in cam:
+        if read_success:
+            cv2.imshow('frame', frame)
+            writer.write(frame)
+        else:
+            break # camera disconnected
 ```
 
 ### VideoReader
