@@ -563,7 +563,8 @@ class VideoReader(LockedCamera):
 
     def read(self):
         self._get_latest_image()
-        cv2.imshow('video', self._prev_frame)
+        if self._delay is not None:
+            cv2.imshow('video', self._prev_frame)
         self._wait_for_camera_image()
         if self.image is None:
             raise OutOfFrames
