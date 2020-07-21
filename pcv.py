@@ -52,6 +52,107 @@ def channel_options(img, rank=False):
         out.append(cv2.hconcat(img_row))
     return cv2.vconcat(out)
 
+class VideoWriter(cv2.VideoWriter):
+    ''' A cv2.VideoWriter with a context manager for releasing. '''
+    properties = {
+        'quality'    : cv2.VIDEOWRITER_PROP_QUALITY,
+        'framebytes' : cv2.VIDEOWRITER_PROP_FRAMEBYTES,
+        'nstripes'   : cv2.VIDEOWRITER_PROP_NSTRIPES,
+    }
+
+    # functioning combinations are often hard to find - these hopefully work
+    SUGGESTED_CODECS = {
+        'avi' : ['H264','X264','XVID','MJPG'],
+        'mp4' : ['avc1','mp4v'],
+        'mov' : ['avc1','mp4v'],
+        'mkv' : ['H264'],
+    }
+
+    def __init__(self, filename, fourcc, fps, frameSize, isColor=True,
+                 apiPreference=None):
+        self.filename       = filename
+        self.fps            = fps
+        self.is_color       = isColor
+        self.frame_size     = frameSize
+        self.api_preference = apiPreference
+        self.set_fourcc(fourcc)
+
+        super().__init__(*self._construct_open_args())
+
+    def set_fourcc(self, fourcc):
+        ''' Set fourcc code as an integer or an iterable of 4 chars. '''
+        if not isinstance(fourcc, int):
+            # assume iterable of 4 chars
+            fourcc = cv2.VideoWriter_fourcc(*fourcc)
+        self.fourcc = fourcc
+
+    def _construct_open_args(self):
+        args = [self.filename, self.fourcc, self.fps, self.frame_size,
+                self.is_color]
+        if self.api_preference is not None:
+            args = [args[0], self.api_preference, *args[1:]]
+        return args
+       
+    def __enter__(self):
+        ''' Re-entrant '''
+        if not self.isOpened():
+            self.open(*self._construct_open_args())
+        return self
+
+    def __exit__(self, *args):
+        self.release()
+
+    def get(self, property):
+        ''' Returns 'property' value, or 0 if not supported by the backend.
+
+        'property' can be a string key for the VideoWriter.properties
+            dictionary or an integer from cv2.VIDEOWRITER_PROP_*
+
+        self.get(str/int) -> float
+
+        '''
+        try:
+            return super().get(self.properties[property.lower()])
+        except AttributeError:
+            return super().get(property)
+
+    def set(self, property, value):
+        ''' Attempts to set the specified property value.
+        Returns True if the property is supported by the backend in use.
+
+        'property' can be a string key for the VideoWriter.properties
+            dictionary or an integer from cv2.VIDEOWRITER_PROP_*
+        'value' should be a float
+
+        self.set(str/int, float) -> bool
+
+        '''
+        try:
+            return super().set(self.properties[property.lower()], value)
+        except AttributeError:
+            return super().set(property, value)
+
+    @classmethod
+    def suggested_codec(cls, filename, exclude=[]):
+        extension = filename.split('.')[-1]
+        try:
+            return [codec for codec in cls.SUGGESTED_CODECS[extension.lower()]
+                    if codec not in exclude][0]
+        except IndexError:
+            raise Exception('No codecs available, try a different extension')
+
+    @classmethod
+    def from_camera(cls, filename, camera, fourcc=None, isColor=True,
+                    apiPreference=None):
+        ''' Returns a VideoWriter based on the properties of the input camera.
+        '''
+        if fourcc is None:
+            fourcc = cls.suggested_codec(filename)
+        frameSize = tuple(int(camera.get(dim)) for dim in ('width','height')) 
+
+        return cls(filename, fourcc, camera.get('fps'), frameSize,
+                   isColor, apiPreference)
+
 
 class OutOfFrames(StopIteration):
     def __init__(msg='Out of video frames', *args, **kwargs):
@@ -327,7 +428,8 @@ class VideoReader(LockedCamera):
         'proportion' : cv2.CAP_PROP_POS_AVI_RATIO,
     }
 
-    FASTER, SLOWER, REWIND, FORWARD, RESET = (ord(key) for key in 'wsadr')
+    FASTER, SLOWER, REWIND, FORWARD, RESET, STEP_BACK, STEP_FORWARD = \
+        (ord(key) for key in 'wsadrbf')
     MIN_DELAY = 1 # delay is integer milliseconds
 
     def __init__(self, filename, *args, start=None, end=None, auto_delay=True,
@@ -367,7 +469,8 @@ class VideoReader(LockedCamera):
             skipping amounts with 'auto_delay' may cause issues with
             time-dependent processing.
         'preprocess' is an optional function which takes an image and returns
-            a modified image. Defaults to no preprocessing.
+            a modified image, which gets applied to each frame on read.
+            Defaults to no preprocessing.
         'display_window' is the string name of the window to display the
             video in (if auto_delay is True) when iterating over the instance
             or using the 'play' method. Defaults to 'video'.
@@ -427,6 +530,21 @@ class VideoReader(LockedCamera):
             self.RESET   : self._reset,
         }
 
+        # add step back and forward functionality if keys not already used
+        self._pause_effects = {
+            self.STEP_BACK    : self.step_back,
+            self.STEP_FORWARD : self.step_forward,
+            **self._pause_effects
+        }
+
+        # ensure time between frames is ignored while paused
+        class LogDict(dict):
+            def get(this, *args, **kwargs):
+                self._prev = time() - (self._period - self.MIN_DELAY) / 1e3
+                return dict.get(this, *args, **kwargs)
+
+        self._pause_effects = LogDict(self._pause_effects)
+
     def _set_start(self, start):
         ''' Set the start of the video to user specification, if possible. '''
         if start is not None:
@@ -460,6 +578,7 @@ class VideoReader(LockedCamera):
         self._register_speed_change()
 
     def _register_speed_change(self):
+        ''' Update internals and print new speed. '''
         self._calculate_period()
         print(f'speed set to {self._speed:.1f}x starting fps') 
 
@@ -498,6 +617,37 @@ class VideoReader(LockedCamera):
         self._direction = 1
         self._calculate_period()
         print(f'Going forwards with speed set to 1x starting fps')
+
+    @staticmethod
+    def step_back(vid):
+        ''' Take a step backwards. '''
+        # store existing state
+        old_skip = vid._skip_frames
+        old_direction = vid._direction
+
+        # enable back-stepping if not currently permitted
+        vid._skip_frames = 0
+
+        # go back a step
+        vid._direction = -1
+        next(vid)
+
+        # restore state
+        vid._direction = old_direction
+        vid._skip_frames = old_skip
+
+    @staticmethod
+    def step_forward(vid):
+        ''' Take a step forwards. '''
+        # store existing state
+        old_direction = vid._direction
+
+        # go forwards a step
+        vid._direction = 1
+        next(vid)
+
+        # restore state
+        vid._direction = old_direction
 
     def _grabber(self):
         ''' Grab images on demand, ready for later usage '''
@@ -579,6 +729,7 @@ class VideoReader(LockedCamera):
     def read(self):
         self._get_latest_image()
         if self._delay is not None:
+            # display previous image while getting the next one
             cv2.imshow(self.display_window, self._prev_frame)
         self._wait_for_camera_image()
         if self.image is None:
@@ -666,9 +817,11 @@ class VideoReader(LockedCamera):
 
 
 if __name__ == '__main__':
-    with VideoReader('testing/22.m4v', windows='all') as vid:
-        vid.play()
-
-    with Camera(0) as cam:
+    with Camera(0) as cam, VideoWriter.from_camera('me.mp4', cam) as writer:
+        print("press 'q' to quit.")
         for read_success, frame in cam:
-            cv2.imshow('frame', frame)
+            if read_success:
+                cv2.imshow('frame', frame)
+                writer.write(frame)
+            else:
+                break # camera disconnected
