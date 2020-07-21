@@ -87,10 +87,8 @@ import cv2
 from pcv import Camera, VideoWriter
 
 out_file = 'me.mp4'
-with Camera(0) as cam, 
-        VideoWriter(out_file, VideoWriter.suggested_codec(out_file), cam.get('fps'),
-                    (int(cam.get('width')), int(cam.get('height')))) as writer:
-    print("press 'q' to quit.")
+with Camera(0) as cam, VideoWriter.from_camera('me.mp4', cam) as writer:
+    print("press 'q' to quit and stop recording.")
     for read_success, frame in cam:
         if read_success:
             cv2.imshow('frame', frame)
