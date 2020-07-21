@@ -1,6 +1,6 @@
 # About
-OpenCV is a fantastic tool for computer vision, with full support in Python
-through its automatically generated bindings. Unfortunately some basic functionality
+OpenCV is a fantastic tool for computer vision, with significant Python support
+through automatically generated bindings. Unfortunately some basic functionality
 is frustrating to use, and documentation is sparse and fragmented as to how best to
 approach even simple tasks such as efficiently processing a webcam feed.
 
@@ -27,6 +27,8 @@ of pause_effects can be passed in to add additional key-bindings while paused wi
 needing to create a subclass. In addition, video playback can be sped up with `w`,
 slowed down with `s`, and if enabled allows rewinding with `a` and returning to
 forwards playback with `d`. Forwards playback at 1x speed can be restored with `r`.
+While paused, video can be stepped forwards and backwards using `f` and `b`, unless
+those keys are used for other purposes in the pause_effects dictionary on initialisation.
 
 For reading and writing video files, the `VideoReader` and `VideoWriter` classes should 
 be used. For streaming, the classes `Camera`, `SlowCamera`, and `LockedCamera` are 
