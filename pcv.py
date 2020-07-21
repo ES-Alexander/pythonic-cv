@@ -431,9 +431,10 @@ class VideoReader(LockedCamera):
     FASTER, SLOWER, REWIND, FORWARD, RESET, STEP_BACK, STEP_FORWARD = \
         (ord(key) for key in 'wsadrbf')
     MIN_DELAY = 1 # delay is integer milliseconds
+    FORWARD_DIRECTION, REVERSE_DIRECTION = 1, -1
 
     def __init__(self, filename, *args, start=None, end=None, auto_delay=True,
-                 fps=None, skip_frames=None, preprocess=None,
+                 fps=None, skip_frames=None, verbose=True, preprocess=None,
                  display_window='video', **kwargs):
         ''' Initialise a video reader from the given file.
 
@@ -468,6 +469,8 @@ class VideoReader(LockedCamera):
             formats with slow video frame setting times, and inconsistent
             skipping amounts with 'auto_delay' may cause issues with
             time-dependent processing.
+        'verbose' is a boolean determining if playback speed and direction
+            changes are printed to the terminal. Defaults to True.
         'preprocess' is an optional function which takes an image and returns
             a modified image, which gets applied to each frame on read.
             Defaults to no preprocessing.
@@ -489,7 +492,7 @@ class VideoReader(LockedCamera):
         self._fps = fps or self.fps # user-specified or auto-retrieved
         self._period = 1e3 / self._fps
         self._initialise_delay(auto_delay)
-        self._initialise_playback(start, end, skip_frames)
+        self._initialise_playback(start, end, skip_frames, verbose)
         self.display_window = display_window
 
         if preprocess is not None:
@@ -511,14 +514,15 @@ class VideoReader(LockedCamera):
                       f'{self._delay}ms from fps={self._fps}')
         # else self._delay defaults to None
 
-    def _initialise_playback(self, start, end, skip_frames):
+    def _initialise_playback(self, start, end, skip_frames, verbose):
         ''' Set up playback settings as specified. '''
         self._set_start(start)
         self._set_end(end)
 
-        self._skip_frames = skip_frames
-        self._direction = 1
-        self._speed = 1
+        self._skip_frames     = skip_frames
+        self._verbose         = verbose
+        self._direction       = self.FORWARD_DIRECTION
+        self._speed           = 1
         self._adjusted_period = self._period
         self._calculate_frames()
 
@@ -580,7 +584,8 @@ class VideoReader(LockedCamera):
     def _register_speed_change(self):
         ''' Update internals and print new speed. '''
         self._calculate_period()
-        print(f'speed set to {self._speed:.1f}x starting fps') 
+        if self._verbose:
+            print(f'speed set to {self._speed:.1f}x starting fps') 
 
     def _calculate_period(self):
         ''' Determine the adjusted period given the speed. '''
@@ -601,25 +606,29 @@ class VideoReader(LockedCamera):
     def _go_back(self):
         ''' Set playback to backwards. '''
         if self._skip_frames is not None:
-            self._direction = -1
-            print('Rewinding')
+            self._direction = self.REVERSE_DIRECTION
+            if self._verbose:
+                print('Rewinding')
         else:
-            print('Cannot go backwards without skip_frames=True')
+            if self._verbose:
+                print('Cannot go backwards without skip_frames=True')
 
     def _go_forward(self):
         ''' Set playback to go forwards. '''
-        self._direction = 1
-        print('Going forwards')
+        self._direction = self.FORWARD_DIRECTION
+        if self._verbose:
+            print('Going forwards')
 
     def _reset(self):
         ''' Restore playback to 1x speed and forwards. '''
         self._speed = 1
-        self._direction = 1
+        self._direction = self.FORWARD_DIRECTION
         self._calculate_period()
-        print(f'Going forwards with speed set to 1x starting fps')
+        if self._verbose:
+            print(f'Going forwards with speed set to 1x starting fps')
 
-    @staticmethod
-    def step_back(vid):
+    @classmethod
+    def step_back(cls, vid):
         ''' Take a step backwards. '''
         # store existing state
         old_skip = vid._skip_frames
@@ -629,21 +638,21 @@ class VideoReader(LockedCamera):
         vid._skip_frames = 0
 
         # go back a step
-        vid._direction = -1
+        vid._direction = cls.REVERSE_DIRECTION
         next(vid)
 
         # restore state
         vid._direction = old_direction
         vid._skip_frames = old_skip
 
-    @staticmethod
-    def step_forward(vid):
+    @classmethod
+    def step_forward(cls, vid):
         ''' Take a step forwards. '''
         # store existing state
         old_direction = vid._direction
 
         # go forwards a step
-        vid._direction = 1
+        vid._direction = cls.FORWARD_DIRECTION
         next(vid)
 
         # restore state
