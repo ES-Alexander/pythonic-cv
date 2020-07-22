@@ -27,8 +27,9 @@ of pause_effects can be passed in to add additional key-bindings while paused wi
 needing to create a subclass. In addition, video playback can be sped up with `w`,
 slowed down with `s`, and if enabled allows rewinding with `a` and returning to
 forwards playback with `d`. Forwards playback at 1x speed can be restored with `r`.
-While paused, video can be stepped forwards and backwards using `f` and `b`, unless
-those keys are used for other purposes in the pause_effects dictionary on initialisation.
+While paused, video can be stepped backwards and forwards using `a` and `d`. All
+default key-bindings can be overwritten using the play_commands and pause_effects
+dictionaries and the quit and play_pause variables on initialisation.
 
 For reading and writing video files, the `VideoReader` and `VideoWriter` classes should 
 be used. For streaming, the classes `Camera`, `SlowCamera`, and `LockedCamera` are 
