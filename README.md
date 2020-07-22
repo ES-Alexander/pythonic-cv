@@ -89,15 +89,9 @@ with Camera(0, windows=display_window,
 import cv2
 from pcv import Camera, VideoWriter
 
-out_file = 'me.mp4'
-with Camera(0) as cam, VideoWriter.from_camera('me.mp4', cam) as writer:
+with Camera(0) as cam:
     print("press 'q' to quit and stop recording.")
-    for read_success, frame in cam:
-        if read_success:
-            cv2.imshow('frame', frame)
-            writer.write(frame)
-        else:
-            break # camera disconnected
+    cam.record_stream('me.mp4')
 ```
 
 ### VideoReader
