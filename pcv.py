@@ -318,8 +318,23 @@ class SlowCamera(ContextualVideoCapture):
         self._id = camera_id
 
     def stream(self, window='frame'):
+        ''' Capture and display camera stream. '''
         for read_success, frame in self:
-            cv2.imshow(window, frame)
+            if read_success:
+                cv2.imshow(window, frame)
+            else:
+                break # camera disconnected
+
+    def record_stream(self, filename, window='frame'):
+        ''' Capture and record camera stream, with optional display. '''
+        with VideoWriter.from_camera(filename, self) as writer:
+            for read_success, frame in self:
+                if read_success:
+                    if window:
+                        cv2.imshow(window, frame)
+                    writer.write(frame)
+                else:
+                    break # camera disconnected 
 
     def __repr__(self):
         return f"{self.__class__.__name__}(camera_id={self._id:!r})"
