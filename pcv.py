@@ -176,8 +176,9 @@ class ContextualVideoCapture(cv2.VideoCapture):
     # more properties + descriptions can be found in the docs:
     # https://docs.opencv.org/3.4/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
 
-    def __init__(self, id, windows=None, *args, delay=None, quit=ord('q'),
-                 play_pause=ord(' '), pause_effects={}, **kwargs):
+    def __init__(self, id, *args, windows=None, delay=None, quit=ord('q'),
+                 play_pause=ord(' '), pause_effects={}, play_commands={},
+                 **kwargs):
         ''' A pausable, quitable, iterable video-capture object
             with context management.
 
@@ -207,6 +208,10 @@ class ContextualVideoCapture(cv2.VideoCapture):
             labelling, or temporary manual control of the event/read loop.
             Note that this is only used while paused, and does not get passed
             quit or play_pause key events.
+        'play_commands' is the same as 'pause_effects' but operates instead
+            while playback/streaming is occurring. For live processing,
+            this can be used to change playback modes, or more generally for
+            similar scenarios as 'pause_effects'.
 
         '''
         super().__init__(id, *args, **kwargs)
@@ -215,6 +220,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
         self._quit          = quit
         self._play_pause    = play_pause
         self._pause_effects = pause_effects
+        self._play_commands = play_commands
 
     def __enter__(self):
         return self
@@ -254,6 +260,9 @@ class ContextualVideoCapture(cv2.VideoCapture):
                 raise UserQuit
             elif key == self._play_pause:
                 self._handle_pause()
+            else:
+                # pass self to a triggered user-defined key handler, or nothing
+                self._play_commands.get(key, lambda cap: None)(self)
 
         # wait completed, get next frame if possible
         if self.isOpened():
@@ -300,6 +309,10 @@ class SlowCamera(ContextualVideoCapture):
     def __init__(self, camera_id=0, *args, delay=1, **kwargs):
         ''' Create a camera capture instance with the given id.
 
+        Arguments are the same as ContextualVideoCapture, but 'id' is replaced
+            with 'camera_id', and 'delay' is set to 1 by default instead of
+            None.
+
         '''
         super().__init__(camera_id, *args, delay=delay, **kwargs)
         self._id = camera_id
@@ -320,8 +333,8 @@ class Camera(SlowCamera):
     pipeline.
 
     '''
-    def __init__(self, camera_id=0, *args, **kwargs):
-        super().__init__(camera_id, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._initialise_grabber()
 
     def _initialise_grabber(self):
@@ -354,15 +367,24 @@ class LockedCamera(Camera):
     having to wait for the capturing to complete).
 
     '''
+    def __init__(self, *args, preprocess=lambda img:img, **kwargs):
+        '''
+        'preprocess' is an optional function which takes an image and returns
+            a modified image, which gets applied to each frame on read.
+            Defaults to no preprocessing.
+        '''
+        super().__init__(*args, **kwargs)
+        self._preprocess = preprocess
+
     def _initialise_grabber(self):
-        ''' '''
+        ''' Create locks and start the grabber thread. '''
         self._lock1 = Lock()
         self._lock2 = Lock()
         self._lock1.acquire() # start with main thread in control
         super()._initialise_grabber()
 
     def _grabber(self):
-        ''' Grab images on demand, ready for later usage '''
+        ''' Grab and preprocess images on demand, ready for later usage '''
         while "running":
             self._wait_until_needed()
             # read the latest frame
@@ -395,10 +417,6 @@ class LockedCamera(Camera):
         self._lock1.acquire() # wait until next image is ready
         self._lock2.release() # inform that image has been received
 
-    def _preprocess(self, image):
-        ''' Perform desired pre-processing in the grabber thread. '''
-        return image
-
     def read(self):
         ''' Enable manual reading and iteration FOR TESTING ONLY.
 
@@ -428,14 +446,13 @@ class VideoReader(LockedCamera):
         'proportion' : cv2.CAP_PROP_POS_AVI_RATIO,
     }
 
-    FASTER, SLOWER, REWIND, FORWARD, RESET, STEP_BACK, STEP_FORWARD = \
-        (ord(key) for key in 'wsadrbf')
-    MIN_DELAY = 1 # delay is integer milliseconds
+    FASTER, SLOWER, REWIND, FORWARD, RESET = (ord(key) for key in 'wsadr')
     FORWARD_DIRECTION, REVERSE_DIRECTION = 1, -1
+    MIN_DELAY = 1 # integer milliseconds
 
     def __init__(self, filename, *args, start=None, end=None, auto_delay=True,
-                 fps=None, skip_frames=None, verbose=True, preprocess=None,
-                 display_window='video', **kwargs):
+                 fps=None, skip_frames=None, verbose=True,
+                 process=lambda img:img, display_window='video', **kwargs):
         ''' Initialise a video reader from the given file.
 
         'filename' is the string path of a video file. Depending on the file
@@ -454,7 +471,13 @@ class VideoReader(LockedCamera):
             speed, 's' slowing it down, 'a' rewinding (only possible if
             'skip_frames' is True), and 'd' returning to forwards playback.
             The 'r' key can be pressed to reset to 1x speed and forwards
-            direction playback.
+            direction playback. 'a' and 'd' can be used while paused to step
+            back and forwards, regardless of skip_frames. These defaults can be
+            overridden using the 'play_commands' and 'pause_effects' keyword
+            arguments, supplying a dictionary of key ordinals that sets the
+            desired behaviour. Note that the defaults are set internally, so to
+            turn them off the dictionary must be used, with e.g.
+            play_commands={ord('a'):lambda vid:None} to disable rewinding.
         'fps' is a float specifying the desired frames per second for playback.
             If left as None the fps is read from file, or if that fails is set
             to 25 by default. Value is ignored if 'auto_delay' is False.
@@ -471,18 +494,19 @@ class VideoReader(LockedCamera):
             time-dependent processing.
         'verbose' is a boolean determining if playback speed and direction
             changes are printed to the terminal. Defaults to True.
-        'preprocess' is an optional function which takes an image and returns
-            a modified image, which gets applied to each frame on read.
-            Defaults to no preprocessing.
+        'process' is an optional function which takes an image and returns
+            a modified image, which gets applied to each preprocessed frame
+            after the next frame has been requested. Defaults to no processing.
         'display_window' is the string name of the window to display the
             video in (if auto_delay is True) when iterating over the instance
             or using the 'play' method. Defaults to 'video'.
 
         *args and **kwargs get passed up the inheritance chain, with notable
             keywords including the 'quit' and 'play_pause' key ordinals which
-            are checked if 'auto_delay' is True, and the 'pause_effects'
-            dictionary mapping key ordinals to desired functionality while
-            paused (see ContextualVideoCapture documentation for details).
+            are checked if 'auto_delay' is True, and the 'play_commands' and
+            'pause_effects' dictionaries mapping key ordinals to desired
+            functionality while playing and paused (see ContextualVideoCapture
+            documentation for details).
 
         '''
         # destroy display_window unless asked not to
@@ -494,11 +518,9 @@ class VideoReader(LockedCamera):
         self._initialise_delay(auto_delay)
         self._initialise_playback(start, end, skip_frames, verbose)
         self.display_window = display_window
+        self._process = process
 
-        if preprocess is not None:
-            self._preprocess = preprocess
-
-        self._prev_frame = super().read()[1]
+        self._prev_frame = super().read()[1] # get the first image
 
     def _initialise_delay(self, auto_delay):
         ''' Determines the delay automatically, or leaves as None. '''
@@ -526,18 +548,19 @@ class VideoReader(LockedCamera):
         self._adjusted_period = self._period
         self._calculate_frames()
 
-        self._playback_commands = {
+        self._play_commands = {
             self.FASTER  : self._speed_up,
             self.SLOWER  : self._slow_down,
             self.REWIND  : self._go_back,
             self.FORWARD : self._go_forward,
             self.RESET   : self._reset,
+            **self._play_commands
         }
 
         # add step back and forward functionality if keys not already used
         self._pause_effects = {
-            self.STEP_BACK    : self.step_back,
-            self.STEP_FORWARD : self.step_forward,
+            self.REWIND  : self.step_back,
+            self.FORWARD : self.step_forward,
             **self._pause_effects
         }
 
@@ -571,15 +594,17 @@ class VideoReader(LockedCamera):
         else:
             self._end = np.inf
 
-    def _speed_up(self):
+    @staticmethod
+    def _speed_up(vid):
         ''' Increase the speed by 10% of the initial value. '''
-        self._speed += 0.1
-        self._register_speed_change()
+        vid._speed += 0.1
+        vid._register_speed_change()
 
-    def _slow_down(self):
+    @staticmethod
+    def _slow_down(vid):
         ''' Reduce the speed by 10% of the initial value. '''
-        self._speed -= 0.1
-        self._register_speed_change()
+        vid._speed -= 0.1
+        vid._register_speed_change()
 
     def _register_speed_change(self):
         ''' Update internals and print new speed. '''
@@ -603,60 +628,66 @@ class VideoReader(LockedCamera):
                         else 1)
         self._calculate_timestep()
 
-    def _go_back(self):
+    @staticmethod
+    def _go_back(vid):
         ''' Set playback to backwards. '''
-        if self._skip_frames is not None:
-            self._direction = self.REVERSE_DIRECTION
-            if self._verbose:
+        if vid._skip_frames is not None:
+            vid._direction = vid.REVERSE_DIRECTION
+            if vid._verbose:
                 print('Rewinding')
         else:
-            if self._verbose:
+            if vid._verbose:
                 print('Cannot go backwards without skip_frames=True')
 
-    def _go_forward(self):
+    @staticmethod
+    def _go_forward(vid):
         ''' Set playback to go forwards. '''
-        self._direction = self.FORWARD_DIRECTION
-        if self._verbose:
+        vid._direction = vid.FORWARD_DIRECTION
+        if vid._verbose:
             print('Going forwards')
 
-    def _reset(self):
+    @staticmethod
+    def _reset(vid):
         ''' Restore playback to 1x speed and forwards. '''
-        self._speed = 1
-        self._direction = self.FORWARD_DIRECTION
-        self._calculate_period()
-        if self._verbose:
+        vid._speed = 1
+        vid._direction = vid.FORWARD_DIRECTION
+        vid._calculate_period()
+        if vid._verbose:
             print(f'Going forwards with speed set to 1x starting fps')
 
-    @classmethod
-    def step_back(cls, vid):
+    @staticmethod
+    def step_back(vid):
         ''' Take a step backwards. '''
         # store existing state
-        old_skip = vid._skip_frames
-        old_direction = vid._direction
+        old_state = (vid._skip_frames, vid._direction, vid._verbose)
 
         # enable back-stepping if not currently permitted
         vid._skip_frames = 0
+        # make sure no unnecessary prints trigger from playback keys
+        vid._verbose = False 
 
         # go back a step
-        vid._direction = cls.REVERSE_DIRECTION
+        vid._direction = vid.REVERSE_DIRECTION
         next(vid)
 
         # restore state
-        vid._direction = old_direction
-        vid._skip_frames = old_skip
+        vid._skip_frames, vid._direction, vid._verbose = old_state
 
-    @classmethod
-    def step_forward(cls, vid):
+    @staticmethod
+    def step_forward(vid):
         ''' Take a step forwards. '''
         # store existing state
-        old_direction = vid._direction
+        old_state = (vid._direction, vid._verbose)
+
+        # make sure no unnecessary prints trigger from playback keys
+        vid._verbose = False
 
         # go forwards a step
-        vid._direction = cls.FORWARD_DIRECTION
+        vid._direction = vid.FORWARD_DIRECTION
         next(vid)
 
         # restore state
-        vid._direction = old_direction
+        vid._direction, vid._verbose = old_state
 
     def _grabber(self):
         ''' Grab images on demand, ready for later usage '''
@@ -738,7 +769,8 @@ class VideoReader(LockedCamera):
     def read(self):
         self._get_latest_image()
         if self._delay is not None:
-            # display previous image while getting the next one
+            # process and display previous image while getting the next one
+            self._prev_frame = self._process(self._prev_frame)
             cv2.imshow(self.display_window, self._prev_frame)
         self._wait_for_camera_image()
         if self.image is None:
@@ -766,13 +798,9 @@ class VideoReader(LockedCamera):
             self._update_playback_settings()
 
             self._prev = now
+        self._update_frame_tracking()
 
-            key = waitKey(self._delay)
-            self._handle_playback(key)
-        else:
-            self._update_frame_tracking()
-
-        return super().__next__(key=key)
+        return super().__next__()
 
     def _update_playback_settings(self):
         ''' Adjusts delay/frame skipping if error is sufficiently large. '''
@@ -799,15 +827,10 @@ class VideoReader(LockedCamera):
                 self._skip_frames += int(sign * skip_frames_change)
                 self._calculate_frames() # update internals
 
-            self._update_frame_tracking()
-
             self._error = sign * new_error_mag
             if self._delay < self.MIN_DELAY:
                 self._error += self.MIN_DELAY - self._delay
                 self._delay = self.MIN_DELAY
-
-    def _handle_playback(self, key):
-        self._playback_commands.get(key, lambda : None)()
 
     def _update_frame_tracking(self):
         # frame skip with no auto-delay allows continual frame skipping
@@ -826,6 +849,11 @@ class VideoReader(LockedCamera):
 
 
 if __name__ == '__main__':
+    with VideoReader('testing/22.m4v', skip_frames=True,
+                     process=lambda img: downsize(img,4)) as vid:
+        vid.play()
+
+    """
     with Camera(0) as cam, VideoWriter.from_camera('me.mp4', cam) as writer:
         print("press 'q' to quit.")
         for read_success, frame in cam:
@@ -834,3 +862,4 @@ if __name__ == '__main__':
                 writer.write(frame)
             else:
                 break # camera disconnected
+    """
