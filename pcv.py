@@ -863,18 +863,36 @@ class VideoReader(LockedCamera):
         return f"VideoReader(filename={self.filename:!r})"
 
 
-if __name__ == '__main__':
-    with VideoReader('testing/22.m4v', skip_frames=True,
-                     process=lambda img: downsize(img,4)) as vid:
-        vid.play()
+class MouseCallback:
+    ''' A context manager for temporary mouse callbacks. '''
+    def __init__(self, window, handler, param=None,
+                 restore=lambda *args: None, restore_param=None):
+        ''' Initialise with the window, handler, and restoration command.
 
-    """
-    with Camera(0) as cam, VideoWriter.from_camera('me.mp4', cam) as writer:
-        print("press 'q' to quit.")
-        for read_success, frame in cam:
-            if read_success:
-                cv2.imshow('frame', frame)
-                writer.write(frame)
-            else:
-                break # camera disconnected
-    """
+        'window' is the name of the window to set the callback for.
+        'handler' is the function for handling the callback, which should take
+            x, y, flags ('&'ed EVENT_FLAG bits), and an optional param passed
+            in from the callback handler.
+        'param' is any Python object that should get passed to the handler
+            on each call - useful for tracking state.
+        'restore' is the function to restore as the handler on context exit.
+        'restore_param' is the handler param to restore on context exit.
+
+        '''
+        self.window        = window
+        self.handler       = handler
+        self.param         = param
+        self.restore       = restore
+        self.restore_param = restore_param
+
+    def __enter__(self):
+        cv2.setMouseCallback(self.window, self.handler, self.param)
+        return self
+
+    def __exit__(self, *args):
+        cv2.setMouseCallback(self.window, self.restore, self.restore_param)
+
+
+if __name__ == '__main__':
+    with Camera(0) as cam:
+        cam.record_stream('me.mp4')
