@@ -81,7 +81,7 @@ with Camera(0) as cam:
 # stream camera 0 on window 'channels', downsized and showing all available channels.
 with LockedCamera(0, display='channels', 
                   process=lambda img: channel_options(downsize(img, 4))) as cam:
-    cam.stream(display_window)
+    cam.stream()
 ```
 
 ### Stream and Record
