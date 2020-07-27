@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 
 import cv2
+import signal
 import numpy as np
 from time import time
-from threading import Thread, Lock
+from queue import Queue
+from threading import Thread, Event
 
 
 waitKey = lambda ms : cv2.waitKey(ms) & 0xFF
 
 def downsize(img, ratio):
     ''' downsize 'img' by 'ratio'. '''
-    return cv2.resize(img, tuple(np.array(img.shape[:2][::-1]) // ratio),
-                      0, 0, cv2.INTER_AREA)
+    return cv2.resize(img,
+                      tuple(dim // ratio for dim in reversed(img.shape[:2])),
+                      interpolation = cv2.INTER_AREA)
 
 def channel_options(img, rank=False):
     ''' Create a composite image of img in all of opencv's colour channels
@@ -52,8 +55,24 @@ def channel_options(img, rank=False):
         out.append(cv2.hconcat(img_row))
     return cv2.vconcat(out)
 
-class VideoWriter(cv2.VideoWriter):
-    ''' A cv2.VideoWriter with a context manager for releasing. '''
+
+class DoNothing:
+    ''' A context manager that does nothing. '''
+    def __init__(self): pass
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+
+
+class BlockingVideoWriter(cv2.VideoWriter):
+    ''' A cv2.VideoWriter with a context manager for releasing.
+
+    Generally suggested to use the non-blocking, threaded VideoWriter class
+        instead, unless your application requires no wait time on completion
+        but permits performance reduction throughout to write frames. If that's
+        the case, try VideoWriter anyway, and come back to this if a notable
+        backlog occurs (it will tell you).
+
+    '''
     properties = {
         'quality'    : cv2.VIDEOWRITER_PROP_QUALITY,
         'framebytes' : cv2.VIDEOWRITER_PROP_FRAMEBYTES,
@@ -70,6 +89,34 @@ class VideoWriter(cv2.VideoWriter):
 
     def __init__(self, filename, fourcc, fps, frameSize, isColor=True,
                  apiPreference=None):
+        ''' Initialise a BlockingVideoWriter with the given parameters.
+
+        'filename' The video file to write to.
+        'fourcc' the "four character code" representing the writing codec.
+            Can be a four character string, or an int as returned by
+            cv2.VideoWriter_fourcc. As functioning combinations of file
+            extension + codec can be difficult to find, the helper method
+            VideoWriter.suggested_codec is provided, accepting a filename
+            (or file extension) and a list of previously tried codecs that
+            didn't work and should be excluded. Suggested codecs are populated
+            from VideoWriter.SUGGESTED_CODECS, if you wish to view the
+            suggested options directly.
+        'fps' is the framerate (frames per second) to save as. It is a constant
+            float, and can only be set on initialisation. To have a video that
+            plays back faster than the recording stream, set the framerate to
+            higher than the input framerate. The VideoWriter.from_camera
+            factory function is provided to create a video-writer directly
+            from a camera instance, and allows measuring of the input framerate
+            for accurate output results if desired.
+        'frameSize' is the size of the input frames as a tuple of (rows, cols).
+        'isColor' is a boolean specifying if the saved images are coloured.
+            Defaults to True. Set False for greyscale input streams.
+        'apiPreference' allows specifying which API backend to use. It can be
+            used to enforce a specific reader implementation if multiple are
+            available (e.g. cv2.CAP_FFMPEG or cv2.CAP_GSTREAMER). Generally
+            this is not required, and if left as None it is ignored.
+
+        '''
         self.filename       = filename
         self.fps            = fps
         self.is_color       = isColor
@@ -81,13 +128,14 @@ class VideoWriter(cv2.VideoWriter):
 
     def set_fourcc(self, fourcc):
         ''' Set fourcc code as an integer or an iterable of 4 chars. '''
+        self.fourcc = fourcc # save for checking value
         if not isinstance(fourcc, int):
             # assume iterable of 4 chars
             fourcc = cv2.VideoWriter_fourcc(*fourcc)
-        self.fourcc = fourcc
+        self._fourcc = fourcc
 
     def _construct_open_args(self):
-        args = [self.filename, self.fourcc, self.fps, self.frame_size,
+        args = [self.filename, self._fourcc, self.fps, self.frame_size,
                 self.is_color]
         if self.api_preference is not None:
             args = [args[0], self.api_preference, *args[1:]]
@@ -143,15 +191,102 @@ class VideoWriter(cv2.VideoWriter):
 
     @classmethod
     def from_camera(cls, filename, camera, fourcc=None, isColor=True,
-                    apiPreference=None):
+                    apiPreference=None, fps=-3, window='frame'):
         ''' Returns a VideoWriter based on the properties of the input camera.
+
+        'fps' can be set as a float, 'camera' to ask the camera for the value,
+            or a negative integer to measure over that number of frames.
+            If no processing is occurring, 'camera' is suggested, otherwise
+            it is generally best to measure the frame output.
+            Defaults to -3, to measure over 3 frames.
+
         '''
         if fourcc is None:
             fourcc = cls.suggested_codec(filename)
-        frameSize = tuple(int(camera.get(dim)) for dim in ('width','height')) 
+        frameSize = tuple(int(camera.get(dim)) for dim in ('width','height'))
 
-        return cls(filename, fourcc, camera.get('fps'), frameSize,
-                   isColor, apiPreference)
+        if fps == 'camera':
+            fps = camera.get('fps')
+        elif fps < 0:
+            fps = camera.measure_framerate(-fps, window)
+            
+        return cls(filename, fourcc, fps, frameSize, isColor, apiPreference)
+
+    def __repr__(self):
+        return (f'{self.__class__.__name__}(filename={repr(self.filename)}, '
+                f'fourcc={repr(self.fourcc)}, fps={self.fps}, '
+                f'frameSize={self.frame_size}, isColor={self.is_colour}, '
+                f'apiPreference={self.api_preference})')
+
+
+class VideoWriter(BlockingVideoWriter):
+    ''' A non-blocking thread-based video writer, using a queue. '''
+    def __init__(self, *args, maxsize=0, verbose_exit=True, **kwargs):
+        ''' Initialise the video writer.
+
+        'maxsize' is the maximum allowed frame buildup before adding frames
+            blocks execution. Defaults to 0 (no maximum). Set a meaningful
+            number if you have fast processing, limited memory, and can't
+            afford the time required to wait at the end once you've finished
+            recording. Setting a number for this is helpful in early testing
+            to get notified of cases where writing to disk is a bottleneck
+            (you may get processing freezes from time to time as a result).
+            Consistently slow write times may indicate a need for a more
+            efficient file format, memory type, or just lower resolution in
+            time or space (ie fewer fps or smaller images).
+        'verbose_exit' is a boolean indicating if the writer should notify
+            you on exit if a backlog wait will be required, and if so once it
+            completes and how long it took. Defaults to True.
+
+        *args and **kwargs are the same as those for BlockingVideoWriter.
+
+        '''
+        super().__init__(*args, **kwargs)
+        self._initialise_writer(maxsize)
+        self._verbose_exit = verbose_exit
+
+    def _initialise_writer(self, maxsize):
+        ''' Start the Thread for grabbing images. '''
+        self.max_queue_size = maxsize
+        self._write_queue = Queue(maxsize=maxsize)
+        self._image_writer = Thread(name='writer', target=self._writer,
+                                    daemon=True)
+        self._image_writer.start()
+
+    def _writer(self):
+        ''' Write frames forever, until '''
+        while "not finished":
+            # retrieve an image, wait indefinitely if necessary
+            img = self._write_queue.get()
+            # write the image to file ('where' is specified outside)
+            super().write(img)
+            # inform the queue that a frame has been written
+            self._write_queue.task_done()
+
+    def write(self, img):
+        ''' Send 'img' to the write queue. '''
+        self._write_queue.put(img)
+
+    def __exit__(self, *args):
+        ''' Wait for writing to complete, and release writer. '''
+        # assume not waiting
+        waited = False
+
+        # check if waiting required
+        if self._verbose_exit and not self._write_queue.empty():
+            print(f'Writing {self._write_queue.qsize()} remaining frames.')
+            print('Force quitting may result in a corrupted video file.')
+            waited = time()
+
+        # finish writing all frames
+        self._write_queue.join()
+
+        # cleanup as normal
+        super().__exit__(*args)
+
+        # if wait occurred, inform of completion
+        if waited and self._verbose_exit:
+            print(f'Writing complete in {time()-waited:.3f}s.')
 
 
 class OutOfFrames(StopIteration):
@@ -176,18 +311,17 @@ class ContextualVideoCapture(cv2.VideoCapture):
     # more properties + descriptions can be found in the docs:
     # https://docs.opencv.org/3.4/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
 
-    def __init__(self, id, *args, windows=None, delay=None, quit=ord('q'),
+    def __init__(self, id, *args, display='frame', delay=None, quit=ord('q'),
                  play_pause=ord(' '), pause_effects={}, play_commands={},
-                 **kwargs):
+                 destroy=-1, **kwargs):
         ''' A pausable, quitable, iterable video-capture object
             with context management.
 
-        'windows' destroys any specified windows on context exit. Can be 'all'
-            to destroy all active opencv windows, a string of a specific window
-            name, or a list of window names to close.
         'id' is the id that gets passed to the underlying VideoCapture object.
             it can be an integer to select a connected camera, or a filename
-            to open a video
+            to open a video.
+        'display' is used as the default window name when streaming. Defaults
+            to 'frame'.
         'delay' is the integer millisecond delay applied between each iteration
             to enable windows to update. If set to None, this is skipped and
             the user must manually call waitKey to update windows.
@@ -212,15 +346,20 @@ class ContextualVideoCapture(cv2.VideoCapture):
             while playback/streaming is occurring. For live processing,
             this can be used to change playback modes, or more generally for
             similar scenarios as 'pause_effects'.
+        'destroy' destroys any specified windows on context exit. Can be 'all'
+            to destroy all active opencv windows, a string of a specific window
+            name, or a list of window names to close. If left as -1, destroys
+            the window specified in 'display'.
 
         '''
         super().__init__(id, *args, **kwargs)
-        self._windows       = windows
+        self.display        = display
         self._delay         = delay
         self._quit          = quit
         self._play_pause    = play_pause
         self._pause_effects = pause_effects
         self._play_commands = play_commands
+        self._destroy       = destroy
 
     def __enter__(self):
         return self
@@ -236,25 +375,25 @@ class ContextualVideoCapture(cv2.VideoCapture):
         self.release()
 
         # clean up window(s) if specified on initialisation
-        windows = self._windows
-        if windows == 'all':
+        destroy = self._destroy
+        if destroy == -1:
+            cv2.destroyWindow(self.display)
+        elif destroy == 'all':
             cv2.destroyAllWindows()
-        elif isinstance(windows, str):
+        elif isinstance(destroy, str):
             # a single window name
-            cv2.destroyWindow(windows)
-        elif windows is not None:
+            cv2.destroyWindow(destroy)
+        elif destroy is not None:
             # assume an iterable of multiple windows
-            for w in windows: cv2.destroyWindow(w)
+            for window in destroy: cv2.destroyWindow(window)
 
     def __iter__(self):
         return self
 
-    def __next__(self, key=None):
+    def __next__(self):
         # check if doing automatic waits
         if self._delay is not None:
-            if key is None:
-                key = waitKey(self._delay)
-            # else wait has already occurred with key passed in
+            key = waitKey(self._delay)
 
             if key == self._quit:
                 raise UserQuit
@@ -280,6 +419,43 @@ class ContextualVideoCapture(cv2.VideoCapture):
             # pass self to a triggered user-defined key handler, or do nothing
             self._pause_effects.get(key, lambda cap: None)(self)
 
+    def stream(self, mouse_handler=DoNothing()):
+        ''' Capture and display stream on window specified at initialisation.
+
+        'mouse_handler' is an optional MouseCallback instance determining
+            the effects of mouse clicks and moves during the stream. Defaults
+            to DoNothing.
+
+        '''
+        with mouse_handler:
+            for read_success, frame in self:
+                if read_success:
+                    cv2.imshow(self.display, frame)
+                else:
+                    break # camera disconnected
+
+    def record_stream(self, filename, show=True, mouse_handler=DoNothing()):
+        ''' Capture and record stream, with optional display.
+
+        'filename' is the file to save to.
+        'show' is a boolean specifying if the result is displayed (on the
+            window specified at initialisation).
+        'mouse_handler' is an optional MouseCallback instance determining
+            the effects of mouse clicks and moves during the stream. It is only
+            useful if 'show' is set to True. Defaults to DoNothing.
+
+        '''
+        with VideoWriter.from_camera(filename, self,
+                                     window=self.display) as writer, \
+                mouse_handler:
+            for read_success, frame in self:
+                if read_success:
+                    if show:
+                        cv2.imshow(self.display, frame)
+                    writer.write(frame)
+                else:
+                    break # camera disconnected
+
     def get(self, property):
         ''' Return the value of 'property' if it exists, else 0.0. '''
         try:
@@ -294,8 +470,11 @@ class ContextualVideoCapture(cv2.VideoCapture):
         except TypeError: # 'property' must be an unknown string
             return super().set(eval('cv2.CAP_PROP_'+property.upper))
 
-    def read(self):
-        self.status, self.image = super().read()
+    def read(self, image=None):
+        if image is not None:
+            self.status, self.image = super().read(image)
+        else:
+            self.status, self.image = super().read()
         return self.status, self.image
 
 
@@ -317,27 +496,26 @@ class SlowCamera(ContextualVideoCapture):
         super().__init__(camera_id, *args, delay=delay, **kwargs)
         self._id = camera_id
 
-    def stream(self, window='frame'):
-        ''' Capture and display camera stream. '''
-        for read_success, frame in self:
-            if read_success:
-                cv2.imshow(window, frame)
-            else:
-                break # camera disconnected
+    def measure_framerate(self, frames, window=None):
+        ''' Measure framerate for specified number of frames.
 
-    def record_stream(self, filename, window='frame'):
-        ''' Capture and record camera stream, with optional display. '''
-        with VideoWriter.from_camera(filename, self) as writer:
-            for read_success, frame in self:
-                if read_success:
-                    if window:
-                        cv2.imshow(window, frame)
-                    writer.write(frame)
-                else:
-                    break # camera disconnected 
+        Displays the frames on 'window' if specified. Can be helpful for
+            accurate measurement if intending to record a stream.
+
+        '''
+        count = 0
+        for read_success, frame in self:
+            if window:
+                cv2.imshow(window, frame)
+            count += 1
+            if count == 1:
+                start = time() # avoid timing opening the window
+            if count > frames:
+                # desired frames reached, set fps as average framerate
+                return count / (time() - start)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(camera_id={self._id:!r})"
+        return f"{self.__class__.__name__}(camera_id={repr(self._id)})"
 
 
 class Camera(SlowCamera):
@@ -354,18 +532,31 @@ class Camera(SlowCamera):
 
     def _initialise_grabber(self):
         ''' Start the Thread for grabbing images. '''
+        #self._finished = Event()
         self._image_grabber = Thread(name='grabber', target=self._grabber,
                                      daemon=True) # auto-kill when finished
         self._image_grabber.start()
 
     def _grabber(self):
         ''' Grab images as fast as possible - only latest gets processed. '''
-        while 'running':
+        #while not self._finished.is_set():
+        while "running":
             self.grab()
 
-    def read(self):
+    """
+    def __exit__(self, *args):
+        self._finished.set()
+        self._image_grabber.join()
+        super().__exit__(*args)
+    """
+
+    def read(self, image=None):
         ''' Read and return the latest available image. '''
-        return self.retrieve()
+        if image is not None:
+            self.status, self.image = self.retrieve(image)
+        else:
+            self.status, self.image = self.retrieve()
+        return self.status, self.image
 
 
 class LockedCamera(Camera):
@@ -382,72 +573,83 @@ class LockedCamera(Camera):
     having to wait for the capturing to complete).
 
     '''
-    def __init__(self, *args, preprocess=lambda img:img, **kwargs):
-        '''
+    def __init__(self, *args, preprocess=lambda img:img,
+                 process=lambda img:img, **kwargs):
+        ''' Create a camera capture instance with the given id.
+
         'preprocess' is an optional function which takes an image and returns
             a modified image, which gets applied to each frame on read.
             Defaults to no preprocessing.
+        'process' is an optional function which takes an image and returns
+            a modified image, which gets applied to each preprocessed frame
+            after the next frame has been requested. Defaults to no processing.
+
+        *args and **kwargs are the same as for Camera.
+
         '''
         super().__init__(*args, **kwargs)
         self._preprocess = preprocess
+        self._process = process
+        self._get_latest_image() # start getting the first image
 
     def _initialise_grabber(self):
         ''' Create locks and start the grabber thread. '''
-        self._lock1 = Lock()
-        self._lock2 = Lock()
-        self._lock1.acquire() # start with main thread in control
+        self._image_desired = Event()
+        self._image_ready   = Event()
         super()._initialise_grabber()
 
     def _grabber(self):
         ''' Grab and preprocess images on demand, ready for later usage '''
+        #while not self._finished.is_set():
         while "running":
             self._wait_until_needed()
             # read the latest frame
-            read_success, frame = super(Camera, self).read()
+            read_success, frame = super(ContextualVideoCapture, self).read()
             if not read_success:
                 raise IOError('Failure to read frame from camera.')
 
             # apply any desired pre-processing and store for main thread
-            self.image = self._preprocess(frame)
+            self._preprocessed = self._preprocess(frame)
             # inform that image is ready for access/main processing
             self._inform_image_ready()
 
     def _wait_until_needed(self):
         ''' Wait for main to request the next image. '''
-        self._lock2.acquire() # wait until previous image has been received
-        self._lock1.acquire() # wait until next image is desired
-        self._lock2.release() # inform that camera is taking image
+        self._image_desired.wait()
+        self._image_desired.clear()
 
     def _inform_image_ready(self):
         ''' Inform main that next image is available. '''
-        self._lock1.release() # inform that next image is ready
+        self._image_ready.set()
 
     def _get_latest_image(self):
         ''' Ask camera handler for next image. '''
-        self._lock1.release() # inform that next image is desired
-        self._lock2.acquire() # wait until camera is taking image
+        self._image_desired.set()
 
     def _wait_for_camera_image(self):
         ''' Wait until next image is available. '''
-        self._lock1.acquire() # wait until next image is ready
-        self._lock2.release() # inform that image has been received
+        self._image_ready.wait()
+        self._image_ready.clear()
 
-    def read(self):
-        ''' Enable manual reading and iteration FOR TESTING ONLY.
+    """
+    def __exit__(self, *args):
+        self._finished.set()
+        self._image_desired.set() # allow thread to reach finished check
+        super().__exit__(*args)
+    """
 
-        If your application can run without issue using this read command
-        or by iterating over the instance, use SlowCamera instead as it will be
-        marginally faster.
-
-        Correct use of this class should at least have something occurring
-        between the calls to the methods self._get_latest_image() and
-        self._wait_for_camera_image() in order to gain benefit from the
-        multithreading.
-
+    def read(self, image=None):
+        ''' For optimal usage, tune _process to take the same amount of time
+            as getting the next frame.
         '''
-        self._get_latest_image()
         self._wait_for_camera_image()
-        return True, self.image
+        preprocessed = self._preprocessed
+        self._get_latest_image()
+        self.image = self._process(preprocessed)
+        if image is not None:
+            image = self.image
+        self.status = True
+        return self.status, self.image
 
 
 class VideoReader(LockedCamera):
@@ -466,8 +668,8 @@ class VideoReader(LockedCamera):
     MIN_DELAY = 1 # integer milliseconds
 
     def __init__(self, filename, *args, start=None, end=None, auto_delay=True,
-                 fps=None, skip_frames=None, verbose=True,
-                 process=lambda img:img, display_window='video', **kwargs):
+                 fps=None, skip_frames=None, verbose=True, display='video',
+                 **kwargs):
         ''' Initialise a video reader from the given file.
 
         'filename' is the string path of a video file. Depending on the file
@@ -509,31 +711,23 @@ class VideoReader(LockedCamera):
             time-dependent processing.
         'verbose' is a boolean determining if playback speed and direction
             changes are printed to the terminal. Defaults to True.
-        'process' is an optional function which takes an image and returns
-            a modified image, which gets applied to each preprocessed frame
-            after the next frame has been requested. Defaults to no processing.
-        'display_window' is the string name of the window to display the
-            video in (if auto_delay is True) when iterating over the instance
-            or using the 'play' method. Defaults to 'video'.
 
         *args and **kwargs get passed up the inheritance chain, with notable
-            keywords including the 'quit' and 'play_pause' key ordinals which
-            are checked if 'auto_delay' is True, and the 'play_commands' and
-            'pause_effects' dictionaries mapping key ordinals to desired
-            functionality while playing and paused (see ContextualVideoCapture
-            documentation for details).
+            keywords including the 'preprocess' and 'process' functions which
+            take an image and return a processed result (see LockedCamera),
+            the 'quit' and 'play_pause' key ordinals which are checked if
+            'auto_delay' is True, and the 'play_commands' and 'pause_effects'
+            dictionaries mapping key ordinals to desired functionality while
+            playing and paused (see ContextualVideoCapture documentation for
+            details).
 
         '''
-        # destroy display_window unless asked not to
-        kwargs = {'windows':display_window, **kwargs}
-        super().__init__(filename, *args, **kwargs)
+        super().__init__(filename, *args, display=display, **kwargs)
         self.filename = filename
         self._fps = fps or self.fps # user-specified or auto-retrieved
         self._period = 1e3 / self._fps
         self._initialise_delay(auto_delay)
         self._initialise_playback(start, end, skip_frames, verbose)
-        self.display_window = display_window
-        self._process = process
 
         self._prev_frame = super().read()[1] # get the first image
 
@@ -704,14 +898,6 @@ class VideoReader(LockedCamera):
         # restore state
         vid._direction, vid._verbose = old_state
 
-    def _grabber(self):
-        ''' Grab images on demand, ready for later usage '''
-        try:
-            super()._grabber()
-        except IOError:
-            self.image = None
-            self._inform_image_ready()
-
     @property
     def fps(self):
         ''' The constant FPS assumed of the video file. '''
@@ -781,21 +967,6 @@ class VideoReader(LockedCamera):
         return 1000 * sum(60 ** index * float(period) for index, period \
                           in enumerate(reversed(timestamp.split(':'))))
 
-    def read(self):
-        self._get_latest_image()
-        if self._delay is not None:
-            # process and display previous image while getting the next one
-            self._prev_frame = self._process(self._prev_frame)
-            cv2.imshow(self.display_window, self._prev_frame)
-        self._wait_for_camera_image()
-        if self.image is None:
-            raise OutOfFrames
-        self._prev_frame = self.image
-        return True, self.image
-
-    def play(self):
-        for read_success, frame in self: pass
-
     def __iter__(self):
         if self._delay is not None:
             self._prev  = time()
@@ -860,7 +1031,7 @@ class VideoReader(LockedCamera):
             raise OutOfFrames
 
     def __repr__(self):
-        return f"VideoReader(filename={self.filename:!r})"
+        return f"{self.__class__.__name__}(filename={repr(self.filename)})"
 
 
 class MouseCallback:
@@ -895,4 +1066,5 @@ class MouseCallback:
 
 if __name__ == '__main__':
     with Camera(0) as cam:
-        cam.record_stream('me.mp4')
+        cam.stream()
+
