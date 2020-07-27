@@ -1,6 +1,6 @@
 # About
-OpenCV is a fantastic tool for computer vision, with full support in Python
-through its automatically generated bindings. Unfortunately some basic functionality
+OpenCV is a fantastic tool for computer vision, with significant Python support
+through automatically generated bindings. Unfortunately some basic functionality
 is frustrating to use, and documentation is sparse and fragmented as to how best to
 approach even simple tasks such as efficiently processing a webcam feed.
 
@@ -27,6 +27,9 @@ of pause_effects can be passed in to add additional key-bindings while paused wi
 needing to create a subclass. In addition, video playback can be sped up with `w`,
 slowed down with `s`, and if enabled allows rewinding with `a` and returning to
 forwards playback with `d`. Forwards playback at 1x speed can be restored with `r`.
+While paused, video can be stepped backwards and forwards using `a` and `d`. All
+default key-bindings can be overwritten using the play_commands and pause_effects
+dictionaries and the quit and play_pause variables on initialisation.
 
 For reading and writing video files, the `VideoReader` and `VideoWriter` classes should 
 be used. For streaming, the classes `Camera`, `SlowCamera`, and `LockedCamera` are 
@@ -47,13 +50,15 @@ separate image-grabbing thread will only serve to slow things down.
 
 `LockedCamera` is intended to work asynchronously like `Camera`, but with more control.
 It allows the user to specify when the next image should be taken, which leads to less
-CPU and power usage because only one image is taken per iteration, but the image can
-still be grabbed and decoded before the next iteration needs to start. The locking 
+wasted CPU and power usage on grabbing frames that aren't used, but with time for the 
+image to be grabbed and decoded before the next iteration needs to start. The locking 
 protocol adds a small amount of additional syntax, and starting the image
 grabbing process too late in an iteration can result in waits similar to those in
 `SlowCamera`, while starting the process too early can result in images being somewhat
-out of date. When used correctly, however, `LockedCamera` has the fastest iteration
-times, as well as CPU and power usage similar to that of `SlowCamera`.
+out of date. Tuning can be done using the 'preprocess' and 'process' keyword arguments,
+with an in-depth usage example provided in `something_fishy.py`. When used correctly
+`LockedCamera` has the fastest iteration times, or if delays are used to slow down the
+process it can have CPU and power usage similar to that of `SlowCamera`.
 
 If using a video file to simulate a live camera stream, use `SlowCamera` or 
 `LockedCamera` - `Camera` will skip frames.
@@ -64,61 +69,51 @@ TODO
 ## Examples
 ### Basic Camera Stream
 ```python
-import cv2
 from pcv import Camera, channel_options, downsize
 
 # start streaming camera 0 (generally laptop webcam/primary camera), and destroy 'frame'
 #   window (default streaming window) when finished.
 # Auto-initialised to have 1ms waitKey between iterations, breaking on 'q' key-press,
 #   and play/pause using the spacebar.
-with Camera(0, windows='frame') as cam:
+with Camera(0) as cam:
     cam.stream()
 
 # stream camera 0 on window 'channels', downsized and showing all available channels.
-display_window='channels'
-with Camera(0, windows=display_window, 
-            preprocess=lambda img: channel_options(downsize(img, 4))) as cam:
-    cam.stream(display_window)
+with LockedCamera(0, display='channels', 
+                  process=lambda img: channel_options(downsize(img, 4))) as cam:
+    cam.stream()
 ```
 
 ### Stream and Record
 ```python
-import cv2
-from pcv import Camera, VideoWriter
+from pcv import Camera
 
-out_file = 'me.mp4'
-with Camera(0) as cam, VideoWriter.from_camera('me.mp4', cam) as writer:
+with Camera(0) as cam:
     print("press 'q' to quit and stop recording.")
-    for read_success, frame in cam:
-        if read_success:
-            cv2.imshow('frame', frame)
-            writer.write(frame)
-        else:
-            break # camera disconnected
+    cam.record_stream('me.mp4')
 ```
 
 ### VideoReader
 ```python
-import cv2
 from pcv import VideoReader, downsize
 
 # just play (simple)
 with VideoReader('my_vid.mp4') as vid:
-    vid.play()
+    vid.stream()
     
 # start 15 seconds in, end at 1:32, downsize the video by a factor of 4
 with VideoReader('my_vid.mp4', start='15', end='1:32', 
                  preprocess=lambda img: downsize(img, 4)) as vid:
-    vid.play()
+    vid.stream()
     
 # enable rewinding and super fast playback
 # Press 'a' to rewind, 'd' to go forwards, 'w' to speed up, 's' to slow down
 #    and 'r' to reset to forwards at 1x speed.
 with VideoReader('my_vid.mp4', skip_frames=0) as vid:
-    vid.play()
+    vid.stream()
     
 # headless mode (no display), operating on every 10th frame
 with VideoReader('my_vid.mp4', auto_delay=False, skip_frames=10,
-                 preprocess=my_processing_func) as vid:
-    vid.play()
+                 process=my_processing_func) as vid:
+    vid.stream()
 ```
