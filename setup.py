@@ -5,7 +5,7 @@ with open("README.md") as fh:
 
 setuptools.setup(
     name='pythonic-cv',
-    version='1.0.0',
+    version='1.0.1',
     author='ES-Alexander',
     author_email='sandman.esalexander@gmail.com',
     description='Performant pythonic wrapper of unnecessarily painful opencv functionality',
