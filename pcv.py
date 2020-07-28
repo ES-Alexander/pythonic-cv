@@ -439,6 +439,11 @@ class ContextualVideoCapture(cv2.VideoCapture):
                 else:
                     break # camera disconnected
 
+    def headless_stream(self):
+        ''' Capture and process stream. '''
+        for read_success, frame in self:
+            if not read_success: break # camera disconnected
+
     def record_stream(self, filename, show=True, mouse_handler=DoNothing()):
         ''' Capture and record stream, with optional display.
 
