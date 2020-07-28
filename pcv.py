@@ -191,9 +191,14 @@ class BlockingVideoWriter(cv2.VideoWriter):
 
     @classmethod
     def from_camera(cls, filename, camera, fourcc=None, isColor=True,
-                    apiPreference=None, fps=-3, window='frame'):
+                    apiPreference=None, fps=-3):
         ''' Returns a VideoWriter based on the properties of the input camera.
 
+        'filename' is the name of the file to save to.
+        'camera' is the SlowCamera instance (or any of its subclasses).
+        'fourcc' is the codec four-character code. If left as None is
+            determined automatically from filename.
+        'isColor' specifies if the video stream is colour or greyscale.
         'fps' can be set as a float, 'camera' to ask the camera for the value,
             or a negative integer to measure over that number of frames.
             If no processing is occurring, 'camera' is suggested, otherwise
@@ -208,7 +213,7 @@ class BlockingVideoWriter(cv2.VideoWriter):
         if fps == 'camera':
             fps = camera.get('fps')
         elif fps < 0:
-            fps = camera.measure_framerate(-fps, window)
+            fps = camera.measure_framerate(-fps)
             
         return cls(filename, fourcc, fps, frameSize, isColor, apiPreference)
 
@@ -496,17 +501,12 @@ class SlowCamera(ContextualVideoCapture):
         super().__init__(camera_id, *args, delay=delay, **kwargs)
         self._id = camera_id
 
-    def measure_framerate(self, frames, window=None):
-        ''' Measure framerate for specified number of frames.
-
-        Displays the frames on 'window' if specified. Can be helpful for
-            accurate measurement if intending to record a stream.
-
-        '''
+    def measure_framerate(self, frames):
+        ''' Measure framerate for specified number of frames. '''
         count = 0
         for read_success, frame in self:
-            if window:
-                cv2.imshow(window, frame)
+            if self.display:
+                cv2.imshow(self.display, frame)
             count += 1
             if count == 1:
                 start = time() # avoid timing opening the window
@@ -683,11 +683,12 @@ class VideoReader(LockedCamera):
         'auto_delay' is a boolean specifying if the delay between frames should
             be automatically adjusted during playback to match the specified
             fps. Set to False if operating headless (not viewing the video), or
-            if manual control is desired while iterating over the video. If
-            True, also enables playback control with 'w' increasing playback
+            if manual control is desired while iterating over the video.
+              If set to False, sets 'destroy' to None if not otherwise set.
+              If True enables playback control with 'w' increasing playback
             speed, 's' slowing it down, 'a' rewinding (only possible if
             'skip_frames' is True), and 'd' returning to forwards playback.
-            The 'r' key can be pressed to reset to 1x speed and forwards
+              The 'r' key can be pressed to reset to 1x speed and forwards
             direction playback. 'a' and 'd' can be used while paused to step
             back and forwards, regardless of skip_frames. These defaults can be
             overridden using the 'play_commands' and 'pause_effects' keyword
@@ -724,7 +725,7 @@ class VideoReader(LockedCamera):
         '''
         super().__init__(filename, *args, display=display, **kwargs)
         self.filename = filename
-        self._fps = fps or self.fps # user-specified or auto-retrieved
+        self._fps = fps or self.fps or 25 # user-specified or auto-retrieved
         self._period = 1e3 / self._fps
         self._initialise_delay(auto_delay)
         self._initialise_playback(start, end, skip_frames, verbose)
@@ -743,6 +744,8 @@ class VideoReader(LockedCamera):
                       f'{self._delay}ms from fps={self._fps}')
         else:
             self._delay = None
+            if self._destroy == -1:
+                self._destroy = None
 
     def _initialise_playback(self, start, end, skip_frames, verbose):
         ''' Set up playback settings as specified. '''
