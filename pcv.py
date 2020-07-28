@@ -440,7 +440,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
                     break # camera disconnected
 
     def headless_stream(self):
-        ''' Capture and process stream. '''
+        ''' Capture and process stream without display. '''
         for read_success, frame in self:
             if not read_success: break # camera disconnected
 
@@ -455,9 +455,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
             useful if 'show' is set to True. Defaults to DoNothing.
 
         '''
-        with VideoWriter.from_camera(filename, self,
-                                     window=self.display) as writer, \
-                mouse_handler:
+        with VideoWriter.from_camera(filename, self) as writer, mouse_handler:
             for read_success, frame in self:
                 if read_success:
                     if show:
@@ -537,23 +535,20 @@ class Camera(SlowCamera):
 
     def _initialise_grabber(self):
         ''' Start the Thread for grabbing images. '''
-        #self._finished = Event()
+        self._finished = Event()
         self._image_grabber = Thread(name='grabber', target=self._grabber,
                                      daemon=True) # auto-kill when finished
         self._image_grabber.start()
 
     def _grabber(self):
         ''' Grab images as fast as possible - only latest gets processed. '''
-        #while not self._finished.is_set():
-        while "running":
+        while not self._finished.is_set():
             self.grab()
 
-    """
     def __exit__(self, *args):
         self._finished.set()
         self._image_grabber.join()
         super().__exit__(*args)
-    """
 
     def read(self, image=None):
         ''' Read and return the latest available image. '''
@@ -605,8 +600,7 @@ class LockedCamera(Camera):
 
     def _grabber(self):
         ''' Grab and preprocess images on demand, ready for later usage '''
-        #while not self._finished.is_set():
-        while "running":
+        while not self._finished.is_set():
             self._wait_until_needed()
             # read the latest frame
             read_success, frame = super(ContextualVideoCapture, self).read()
@@ -636,12 +630,10 @@ class LockedCamera(Camera):
         self._image_ready.wait()
         self._image_ready.clear()
 
-    """
     def __exit__(self, *args):
         self._finished.set()
         self._image_desired.set() # allow thread to reach finished check
         super().__exit__(*args)
-    """
 
     def read(self, image=None):
         ''' For optimal usage, tune _process to take the same amount of time
@@ -1077,9 +1069,6 @@ class MouseCallback:
 
 
 if __name__ == '__main__':
-    with VideoReader('lol.mp4', start='5', skip_frames=True) as vid:
-        vid.stream()
-
-    #with Camera(0) as cam:
-    #    cam.stream()
+    with Camera(0) as cam:
+        cam.stream()
 
