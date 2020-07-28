@@ -729,8 +729,6 @@ class VideoReader(LockedCamera):
         self._initialise_delay(auto_delay)
         self._initialise_playback(start, end, skip_frames, verbose)
 
-        self._prev_frame = super().read()[1] # get the first image
-
     def _initialise_delay(self, auto_delay):
         ''' Determines the delay automatically, or leaves as None. '''
         if auto_delay:
@@ -743,10 +741,13 @@ class VideoReader(LockedCamera):
                 self._delay = int(self._period)
                 print('delay set automatically to',
                       f'{self._delay}ms from fps={self._fps}')
-        # else self._delay defaults to None
+        else:
+            self._delay = None
 
     def _initialise_playback(self, start, end, skip_frames, verbose):
         ''' Set up playback settings as specified. '''
+        self._wait_for_camera_image() # don't set frame while grabber running
+
         self._set_start(start)
         self._set_end(end)
 
@@ -780,6 +781,8 @@ class VideoReader(LockedCamera):
                 return dict.get(this, *args, **kwargs)
 
         self._pause_effects = LogDict(self._pause_effects)
+
+        self._get_latest_image() # re-initialise as ready
 
     def _set_start(self, start):
         ''' Set the start of the video to user specification, if possible. '''
@@ -1023,6 +1026,7 @@ class VideoReader(LockedCamera):
         # only set frame if necessary (moving one frame ahead isn't helpful)
         if self._skip_frames is not None and \
            (self._direction == -1 or self._frames != 1):
+            self._image_ready.wait()
             self.set_frame(self._frame + self._frames * self._direction)
         else:
             self._frame += 1
@@ -1065,6 +1069,9 @@ class MouseCallback:
 
 
 if __name__ == '__main__':
-    with Camera(0) as cam:
-        cam.stream()
+    with VideoReader('lol.mp4', start='5', skip_frames=True) as vid:
+        vid.stream()
+
+    #with Camera(0) as cam:
+    #    cam.stream()
 
