@@ -1,5 +1,5 @@
 _________________________________
- Version: 1.0.1                 
+ Version: 1.0.2                 
  Author: ES Alexander            
  Release Date: 28/Jul/2020       
 _________________________________
@@ -81,7 +81,7 @@ If using a video file to simulate a live camera stream, use `SlowCamera` or
 ## Examples
 ### Basic Camera Stream
 ```python
-from pcv import Camera, channel_options, downsize
+from pcv.pcv import Camera, channel_options, downsize
 
 # start streaming camera 0 (generally laptop webcam/primary camera), and destroy 'frame'
 #   window (default streaming window) when finished.
@@ -98,7 +98,7 @@ with LockedCamera(0, display='channels',
 
 ### Stream and Record
 ```python
-from pcv import Camera
+from pcv.pcv import Camera
 
 with Camera(0) as cam:
     print("press 'q' to quit and stop recording.")
@@ -107,7 +107,7 @@ with Camera(0) as cam:
 
 ### VideoReader
 ```python
-from pcv import VideoReader, downsize
+from pcv.pcv import VideoReader, downsize
 
 # just play (simple)
 with VideoReader('my_vid.mp4') as vid:
