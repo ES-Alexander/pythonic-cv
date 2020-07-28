@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 from os import mkdir
 from os.path import isfile, isdir
-from pcv import LockedCamera, MouseCallback
+from pcv.pcv import LockedCamera, MouseCallback
 
 
 class Fish:
