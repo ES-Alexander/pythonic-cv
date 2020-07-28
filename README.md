@@ -1,3 +1,9 @@
+_________________________________
+ Version: 1.0.0                 
+ Author: ES Alexander            
+ Release Date: 28/Jul/2020       
+_________________________________
+
 # About
 OpenCV is a fantastic tool for computer vision, with significant Python support
 through automatically generated bindings. Unfortunately some basic functionality
@@ -10,12 +16,17 @@ be optimal, but every effort has been made to make the code as performant as
 possible while ensuring ease of use and helpful errors/documentation.
 
 # Requirements
-This library requires an existing version of OpenCV with Python bindings to be 
+This library requires an existing version of `OpenCV` with Python bindings to be 
 installed (e.g. `python3 -m pip install opencv-python`). Some features (mainly
 property access helpers) may not work for versions of OpenCV earlier than 4.2.0. 
 The library was tested using Python 3.7.2, and is expected to work down to at least
 Python 3.4 (although the integrated advanced features example uses matmul (@) for
 some processing, which was introduced in Python 3.5).
+
+`Numpy` is also used throughout, so a recent version is suggested (tested with 1.19.0).
+
+# Installation
+The library can be installed from pip, with `python3 -m pip install pythonic-cv`.
 
 # Usage
 New functionality is provided in the `pcv` module, as described below. All other 
@@ -116,5 +127,5 @@ with VideoReader('my_vid.mp4', skip_frames=0) as vid:
 # headless mode (no display), operating on every 10th frame
 with VideoReader('my_vid.mp4', auto_delay=False, skip_frames=10,
                  process=my_processing_func) as vid:
-    vid.stream()
+    vid.headless_stream()
 ```
