@@ -6,11 +6,6 @@ from os import mkdir
 from os.path import isfile, isdir
 from pcv import LockedCamera, MouseCallback
 
-# TODO:
-# - release 1.0.0
-# - pip library
-# - linkedIn + reddit posts
-# - fix Camera+LockedCamera segfault on quit
 
 class Fish:
     ''' A fish that floats, and can be tickled and/or caught. '''
