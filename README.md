@@ -14,7 +14,8 @@ This library requires an existing version of OpenCV with Python bindings to be
 installed (e.g. `python3 -m pip install opencv-python`). Some features (mainly
 property access helpers) may not work for versions of OpenCV earlier than 4.2.0. 
 The library was tested using Python 3.7.2, and is expected to work down to at least
-Python 3.4.
+Python 3.4 (although the integrated advanced features example uses matmul (@) for
+some processing, which was introduced in Python 3.5).
 
 # Usage
 New functionality is provided in the `pcv` module, as described below. All other 
