@@ -75,8 +75,8 @@ process it can have CPU and power usage similar to that of `SlowCamera`.
 If using a video file to simulate a live camera stream, use `SlowCamera` or 
 `LockedCamera` - `Camera` will skip frames.
 
-## Class Selection Flowchart
-TODO
+## Overview
+![Overview of classes diagram](https://github.com/ES-Alexander/pythonic-cv/blob/master/Overview.png)
 
 ## Examples
 ### Basic Camera Stream
