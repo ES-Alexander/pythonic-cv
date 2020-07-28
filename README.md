@@ -1,5 +1,5 @@
 _________________________________
- Version: 1.0.0                 
+ Version: 1.0.1                 
  Author: ES Alexander            
  Release Date: 28/Jul/2020       
 _________________________________
