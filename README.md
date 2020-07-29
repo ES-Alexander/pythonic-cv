@@ -129,3 +129,10 @@ with VideoReader('my_vid.mp4', auto_delay=False, skip_frames=10,
                  process=my_processing_func) as vid:
     vid.headless_stream()
 ```
+
+### Advanced Example (something_fishy.py)
+Copy the `names.txt` file to where you want to create your gallery (or create your 
+own `names.txt` with one name per line, of your friends and family for example), 
+and run `python3 -m pcv.something_fishy` to run the example. There are several
+generally useful processing techniques included, so take a look through the code
+and find the functionality that's most interesting to you to explore and modify.
