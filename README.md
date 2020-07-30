@@ -1,7 +1,7 @@
 _________________________________
- Version: 1.0.2                 
+ Version: 1.1.0                 
  Author: ES Alexander            
- Release Date: 28/Jul/2020       
+ Release Date: 29/Jul/2020       
 _________________________________
 
 # About
@@ -81,7 +81,8 @@ If using a video file to simulate a live camera stream, use `SlowCamera` or
 ## Examples
 ### Basic Camera Stream
 ```python
-from pcv.pcv import Camera, channel_options, downsize
+from pcv.vidIO import Camera
+from pcv.helpers import channel_options, downsize
 
 # start streaming camera 0 (generally laptop webcam/primary camera), and destroy 'frame'
 #   window (default streaming window) when finished.
@@ -98,7 +99,7 @@ with LockedCamera(0, display='channels',
 
 ### Stream and Record
 ```python
-from pcv.pcv import Camera
+from pcv.vidIO import Camera
 
 with Camera(0) as cam:
     print("press 'q' to quit and stop recording.")
@@ -107,7 +108,8 @@ with Camera(0) as cam:
 
 ### VideoReader
 ```python
-from pcv.pcv import VideoReader, downsize
+from pcv.vidIO import VideoReader
+from pcv.helpers import downsize
 
 # just play (simple)
 with VideoReader('my_vid.mp4') as vid:
@@ -129,3 +131,10 @@ with VideoReader('my_vid.mp4', auto_delay=False, skip_frames=10,
                  process=my_processing_func) as vid:
     vid.headless_stream()
 ```
+
+### Advanced Example (something_fishy.py)
+Copy the `names.txt` file to where you want to create your gallery (or create your 
+own `names.txt` with one name per line, of your friends and family for example), 
+and run `python3 -m pcv.something_fishy` to run the example. There are several
+generally useful processing techniques included, so take a look through the code
+and find the functionality that's most interesting to you to explore and modify.
