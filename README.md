@@ -1,7 +1,7 @@
 _________________________________
- Version: 1.1.1                 
+ Version: 1.1.2                 
  Author: ES Alexander            
- Release Date: 29/Jul/2020       
+ Release Date: 12/Aug/2020       
 _________________________________
 
 # About
@@ -82,7 +82,7 @@ If using a video file to simulate a live camera stream, use `SlowCamera` or
 ### Basic Camera Stream
 ```python
 from pcv.vidIO import Camera
-from pcv.helpers import channel_options, downsize
+from pcv.process import channel_options, downsize
 
 # start streaming camera 0 (generally laptop webcam/primary camera), and destroy 'frame'
 #   window (default streaming window) when finished.
@@ -109,7 +109,7 @@ with Camera(0) as cam:
 ### VideoReader
 ```python
 from pcv.vidIO import VideoReader
-from pcv.helpers import downsize
+from pcv.process import downsize
 
 # just play (simple)
 with VideoReader('my_vid.mp4') as vid:
