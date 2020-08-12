@@ -8,7 +8,7 @@ def downsize(img, ratio):
                       tuple(dim // ratio for dim in reversed(img.shape[:2])),
                       interpolation = cv2.INTER_AREA)
 
-def channel_options(img, rank=False):
+def channel_options(img):
     ''' Create a composite image of img in all of opencv's colour channels
 
     |img| -> | blue       | green      | red         |
@@ -16,15 +16,6 @@ def channel_options(img, rank=False):
              | hue2       | luminosity | saturation2 |
              | lightness  | green-red  | blue-yellow |
              | lightness2 | u          | v           |
-
-    'rank' is a boolean? specifying whether to also return a ranking of each
-        channel by variability/sharpness/contrast/other? !NOT YET IMPLEMENTED!
-        TODO
-        -> make a string maybe, with several options available, or select
-            multiple options in a list and get back an array or dataframe or
-            something
-        -> important to make nicely stackable to run on video and determine
-           statistics on the best option for a given use case
 
     '''
     B,G,R = cv2.split(img)

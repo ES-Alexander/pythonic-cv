@@ -3,7 +3,7 @@
 import cv2
 import signal
 import numpy as np
-from time import time
+from time import perf_counter
 from queue import Queue
 from threading import Thread, Event
 from pcv.interact import DoNothing, waitKey
@@ -227,7 +227,7 @@ class VideoWriter(BlockingVideoWriter):
         if self._verbose_exit and not self._write_queue.empty():
             print(f'Writing {self._write_queue.qsize()} remaining frames.')
             print('Force quitting may result in a corrupted video file.')
-            waited = time()
+            waited = perf_counter()
 
         # finish writing all frames
         self._write_queue.join()
@@ -237,7 +237,7 @@ class VideoWriter(BlockingVideoWriter):
 
         # if wait occurred, inform of completion
         if waited and self._verbose_exit:
-            print(f'Writing complete in {time()-waited:.3f}s.')
+            print(f'Writing complete in {perf_counter()-waited:.3f}s.')
 
 
 class OutOfFrames(StopIteration):
@@ -458,10 +458,10 @@ class SlowCamera(ContextualVideoCapture):
                 cv2.imshow(self.display, frame)
             count += 1
             if count == 1:
-                start = time() # avoid timing opening the window
+                start = perf_counter() # avoid timing opening the window
             if count > frames:
                 # desired frames reached, set fps as average framerate
-                return count / (time() - start)
+                return count / (perf_counter() - start)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(camera_id={repr(self._id)})"
@@ -723,7 +723,7 @@ class VideoReader(LockedCamera):
         # ensure time between frames is ignored while paused
         class LogDict(dict):
             def get(this, *args, **kwargs):
-                self._prev = time() - (self._period - self.MIN_DELAY) / 1e3
+                self._prev = perf_counter() - (self._period - self.MIN_DELAY) / 1e3
                 return dict.get(this, *args, **kwargs)
 
         self._pause_effects = LogDict(self._pause_effects)
@@ -918,7 +918,7 @@ class VideoReader(LockedCamera):
 
     def __iter__(self):
         if self._delay is not None:
-            self._prev  = time()
+            self._prev  = perf_counter()
             self._error = 0
             self._delay = 1
         return self
@@ -926,7 +926,7 @@ class VideoReader(LockedCamera):
     def __next__(self):
         if self._delay is not None:
             # auto-adjust to get closer to desired fps
-            now = time()
+            now = perf_counter()
             diff = 1e3 * (now - self._prev) # s to ms
             self._error += diff - self._timestep
 

@@ -1,15 +1,15 @@
 Metadata-Version: 2.1
 Name: pythonic-cv
-Version: 1.1.1
+Version: 1.1.2
 Summary: Performant pythonic wrapper of unnecessarily painful opencv functionality
 Home-page: https://github.com/ES-Alexander/pythonic-cv
 Author: ES-Alexander
 Author-email: sandman.esalexander@gmail.com
 License: UNKNOWN
 Description: _________________________________
-         Version: 1.1.1                 
+         Version: 1.1.2                 
          Author: ES Alexander            
-         Release Date: 29/Jul/2020       
+         Release Date: 12/Aug/2020       
         _________________________________
         
         # About
@@ -90,7 +90,7 @@ Description: _________________________________
         ### Basic Camera Stream
         ```python
         from pcv.vidIO import Camera
-        from pcv.helpers import channel_options, downsize
+        from pcv.process import channel_options, downsize
         
         # start streaming camera 0 (generally laptop webcam/primary camera), and destroy 'frame'
         #   window (default streaming window) when finished.
@@ -117,7 +117,7 @@ Description: _________________________________
         ### VideoReader
         ```python
         from pcv.vidIO import VideoReader
-        from pcv.helpers import downsize
+        from pcv.process import downsize
         
         # just play (simple)
         with VideoReader('my_vid.mp4') as vid:
