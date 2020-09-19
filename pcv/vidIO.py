@@ -3,7 +3,7 @@
 import cv2
 import signal
 import numpy as np
-from time import perf_counter
+from time import perf_counter, sleep
 from queue import Queue
 from threading import Thread, Event
 from pcv.interact import DoNothing, waitKey
@@ -304,15 +304,25 @@ class ContextualVideoCapture(cv2.VideoCapture):
 
         '''
         super().__init__(id, *args, **kwargs)
-        self.display        = display
-        self._delay         = delay
-        self._quit          = quit
-        self._play_pause    = play_pause
-        self._pause_effects = pause_effects
-        self._play_commands = play_commands
-        self._destroy       = destroy
+        self._id             = id
+        self.display         = display
+        self._delay          = delay
+        self._quit           = quit
+        self._play_pause     = play_pause
+        self._pause_effects  = pause_effects
+        self._play_commands  = play_commands
+        self._destroy        = destroy
+
+        self._api_preference = kwargs.get('apiPreference', None)
 
     def __enter__(self):
+        ''' Enter a re-entrant context for this camera. '''
+        if not self.isOpened():
+            if self._api_preference:
+                self.open(self._id, self._api_preference)
+            else:
+                self.open(self._id)
+
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -327,16 +337,23 @@ class ContextualVideoCapture(cv2.VideoCapture):
 
         # clean up window(s) if specified on initialisation
         destroy = self._destroy
-        if destroy == -1:
-            cv2.destroyWindow(self.display)
-        elif destroy == 'all':
-            cv2.destroyAllWindows()
-        elif isinstance(destroy, str):
-            # a single window name
-            cv2.destroyWindow(destroy)
-        elif destroy is not None:
-            # assume an iterable of multiple windows
-            for window in destroy: cv2.destroyWindow(window)
+        try:
+            if destroy == -1:
+                cv2.destroyWindow(self.display)
+            elif destroy == 'all':
+                cv2.destroyAllWindows()
+            elif isinstance(destroy, str):
+                # a single window name
+                cv2.destroyWindow(destroy)
+            elif destroy is not None:
+                # assume an iterable of multiple windows
+                for window in destroy: cv2.destroyWindow(window)
+            else:
+                return # destroy is None
+        except cv2.error as e:
+            print('Failed to destroy window(s)', e)
+
+        waitKey(1) # allow the GUI manager to update
 
     def __iter__(self):
         return self
@@ -426,10 +443,11 @@ class ContextualVideoCapture(cv2.VideoCapture):
 
     def read(self, image=None):
         if image is not None:
-            self.status, self.image = super().read(image)
+            status, image = super().read(image)
         else:
-            self.status, self.image = super().read()
-        return self.status, self.image
+            status, image = super().read()
+        self.status, self.image = status, image
+        return status, image
 
 
 class SlowCamera(ContextualVideoCapture):
@@ -448,7 +466,6 @@ class SlowCamera(ContextualVideoCapture):
 
         '''
         super().__init__(camera_id, *args, delay=delay, **kwargs)
-        self._id = camera_id
 
     def measure_framerate(self, frames):
         ''' Measure framerate for specified number of frames. '''
@@ -485,11 +502,20 @@ class Camera(SlowCamera):
         self._image_grabber = Thread(name='grabber', target=self._grabber,
                                      daemon=True) # auto-kill when finished
         self._image_grabber.start()
+        self._wait_for_grabber_start()
 
     def _grabber(self):
         ''' Grab images as fast as possible - only latest gets processed. '''
         while not self._finished.is_set():
             self.grab()
+
+    def _wait_for_grabber_start(self):
+        ''' Waits for a successful retrieve. Raises Exception after 50 attempts. '''
+        for check in range(50):
+            if self.retrieve()[0]: break
+            sleep(0.1)
+        else:
+            raise Exception(f'Failed to start {self.__class__.__name__}')
 
     def __exit__(self, *args):
         self._finished.set()
@@ -499,10 +525,11 @@ class Camera(SlowCamera):
     def read(self, image=None):
         ''' Read and return the latest available image. '''
         if image is not None:
-            self.status, self.image = self.retrieve(image)
+            status, image = self.retrieve(image)
         else:
-            self.status, self.image = self.retrieve()
-        return self.status, self.image
+            status, image = self.retrieve()
+        self.status, self.image = status, image
+        return status, image
 
 
 class LockedCamera(Camera):
@@ -557,6 +584,10 @@ class LockedCamera(Camera):
             self._preprocessed = self._preprocess(frame)
             # inform that image is ready for access/main processing
             self._inform_image_ready()
+
+    def _wait_for_grabber_start(self):
+        ''' Not used - done automatically with Events. '''
+        pass
 
     def _wait_until_needed(self):
         ''' Wait for main to request the next image. '''
