@@ -1,7 +1,7 @@
 _________________________________
- Version: 1.1.2                 
+ Version: 1.1.3                  
  Author: ES Alexander            
- Release Date: 12/Aug/2020       
+ Release Date: 19/Sep/2020       
 _________________________________
 
 # About
