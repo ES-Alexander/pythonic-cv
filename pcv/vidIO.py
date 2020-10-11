@@ -718,7 +718,7 @@ class VideoReader(LockedCamera):
         ''' Determines the delay automatically, or leaves as None. '''
         if auto_delay:
             if self._fps == 0 or self._fps >= 1e3:
-                self.verbos_print('failed to determine fps, setting to 25')
+                self.verbose_print('failed to determine fps, setting to 25')
                 self._period = 1e3 / 25
                 # set a bit low to allow image read times
                 self._delay = self._period - 5
