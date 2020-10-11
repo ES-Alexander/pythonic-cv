@@ -1,15 +1,15 @@
 Metadata-Version: 2.1
 Name: pythonic-cv
-Version: 1.1.3
+Version: 1.1.4
 Summary: Performant pythonic wrapper of unnecessarily painful opencv functionality
 Home-page: https://github.com/ES-Alexander/pythonic-cv
 Author: ES-Alexander
 Author-email: sandman.esalexander@gmail.com
 License: UNKNOWN
 Description: _________________________________
-         Version: 1.1.3                  
+         Version: 1.1.4                  
          Author: ES Alexander            
-         Release Date: 19/Sep/2020       
+         Release Date: 11/Oct/2020       
         _________________________________
         
         # About
@@ -120,6 +120,8 @@ Description: _________________________________
         from pcv.process import downsize
         
         # just play (simple)
+        # Press 'b' to jump playback back to the beginning (only works if pressed
+        #   before playback is finished)
         with VideoReader('my_vid.mp4') as vid:
             vid.stream()
             

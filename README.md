@@ -1,7 +1,7 @@
 _________________________________
- Version: 1.1.3                  
+ Version: 1.1.4                  
  Author: ES Alexander            
- Release Date: 19/Sep/2020       
+ Release Date: 11/Oct/2020       
 _________________________________
 
 # About
@@ -112,6 +112,8 @@ from pcv.vidIO import VideoReader
 from pcv.process import downsize
 
 # just play (simple)
+# Press 'b' to jump playback back to the beginning (only works if pressed
+#   before playback is finished)
 with VideoReader('my_vid.mp4') as vid:
     vid.stream()
     
