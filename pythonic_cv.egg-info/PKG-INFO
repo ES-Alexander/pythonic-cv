@@ -1,15 +1,15 @@
 Metadata-Version: 2.1
 Name: pythonic-cv
-Version: 1.1.4
+Version: 1.1.5
 Summary: Performant pythonic wrapper of unnecessarily painful opencv functionality
 Home-page: https://github.com/ES-Alexander/pythonic-cv
 Author: ES-Alexander
 Author-email: sandman.esalexander@gmail.com
 License: UNKNOWN
 Description: _________________________________
-         Version: 1.1.4                  
+         Version: 1.1.5                  
          Author: ES Alexander            
-         Release Date: 11/Oct/2020       
+         Release Date: 17/Oct/2020       
         _________________________________
         
         # About
@@ -142,12 +142,35 @@ Description: _________________________________
             vid.headless_stream()
         ```
         
-        ### Advanced Example (something_fishy.py)
-        Copy the `names.txt` file to where you want to create your gallery (or create your 
-        own `names.txt` with one name per line, of your friends and family for example), 
-        and run `python3 -m pcv.something_fishy` to run the example. There are several
-        generally useful processing techniques included, so take a look through the code
-        and find the functionality that's most interesting to you to explore and modify.
+        ### Advanced Examples
+        Check the `pcv/examples` folder for some examples of full programs using this library.
+        
+        #### Something Fishy
+        This example is a relatively basic augmented reality example, which creates a tank of
+        fish that swim around on top of a video/webbcam feed. You can catch the fish (click and
+        drag a 'net' over them with your mouse), or tickle them (move around in your webcam feed).
+        There are several generally useful processing techniques included, so take a look 
+        through the code and find the functionality that's most interesting to you to explore
+        and modify.
+        
+        To run the example use `python3 -m pcv.examples.something_fishy`, or optionally specify
+        the path to a newline separated text file of names (of your friends and family for 
+        example), and run with `python3 -m pcv.examples.something_fishy path/to/names.txt`.
+        
+        #### Video Switcher
+        This was made in response to a question from `u/guillerubio` on reddit, to show how to
+        efficiently read multiple videos simultaneously while only displaying one, and switching
+        between videos based on what's happening in a webcam feed. 
+        
+        The current video is switched out when the camera is covered/uncovered. Switching is
+        performed intelligently by only actually reading frames from a single 'active' video
+        at a time. The `VideoSwitcher` class allows tracking along all the videos simultaneously
+        based on how many frames have occurred since they were last active, as well as just
+        resuming from where each one left off when it was last active. When a video ends it gets
+        started again (in an infinite loop).
+        
+        To run the example use `python3 -m pcv.examples.cam_video_switch` while in a directory
+        with the `.mp4` files you want to switch between.
         
 Platform: UNKNOWN
 Classifier: Programming Language :: Python :: 3
