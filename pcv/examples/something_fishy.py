@@ -529,11 +529,21 @@ class FishTank:
             cv2.rectangle(img, self._start_point, self._end_point, (0,0,100),
                           thickness)
 
+if __name__ == '__main__':
+    import sys, pathlib
 
-tank = FishTank((720,1280), name_file='names.txt') 
-window = 'Fish Tank'
-with LockedCamera(0, preprocess=tank.preprocess, process=tank, display=window,
-                  play_commands={ord('g'):tank.toggle_gradient,
-                                 ord('i'):tank.toggle_instructions}) as cam:
-    cam.record_stream('lol.mp4',
-                      mouse_handler=MouseCallback(window, tank.mouse_handler))
+    if len(sys.argv) > 1:
+        name_file = sys.argv[1]
+    else:
+        name_file = f'{pathlib.Path(__file__).parent.absolute()}/names.txt'
+
+
+    tank = FishTank((720,1280), name_file=name_file) 
+    window = 'Fish Tank'
+    with LockedCamera(0, preprocess=tank.preprocess, process=tank,
+                      display=window, play_commands={
+                          ord('g'):tank.toggle_gradient,
+                          ord('i'):tank.toggle_instructions
+                      }) as cam:
+        cam.record_stream('fish.mp4', mouse_handler =
+                          MouseCallback(window, tank.mouse_handler))
