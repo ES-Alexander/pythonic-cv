@@ -150,7 +150,7 @@ the path to a newline separated text file of names (of your friends and family f
 example), and run with `python3 -m pcv.examples.something_fishy path/to/names.txt`.
 
 #### Video Switcher
-This was made in response to a question from u/guillerubio on reddit, to show how to
+This was made in response to a question from `u/guillerubio` on reddit, to show how to
 efficiently read multiple videos simultaneously while only displaying one, and switching
 between videos based on what's happening in a webcam feed. 
 
