@@ -535,7 +535,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         name_file = sys.argv[1]
     else:
-        name_file = f'{pathlib.Path(__file__).parent.absolute()}/names.txt'
+        name_file = pathlib.Path(__file__).parent.absolute() / 'names.txt'
 
 
     tank = FishTank((720,1280), name_file=name_file) 
