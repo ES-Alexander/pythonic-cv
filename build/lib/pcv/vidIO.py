@@ -86,7 +86,7 @@ class BlockingVideoWriter(cv2.VideoWriter):
         if self.api_preference is not None:
             args = [args[0], self.api_preference, *args[1:]]
         return args
-       
+
     def __enter__(self):
         ''' Re-entrant '''
         if not self.isOpened():
@@ -137,7 +137,7 @@ class BlockingVideoWriter(cv2.VideoWriter):
 
     @classmethod
     def from_camera(cls, filename, camera, fourcc=None, isColor=True,
-                    apiPreference=None, fps=-3):
+                    apiPreference=None, fps=-3, **kwargs):
         ''' Returns a VideoWriter based on the properties of the input camera.
 
         'filename' is the name of the file to save to.
@@ -150,6 +150,7 @@ class BlockingVideoWriter(cv2.VideoWriter):
             If no processing is occurring, 'camera' is suggested, otherwise
             it is generally best to measure the frame output.
             Defaults to -3, to measure over 3 frames.
+        'kwrags' are any additional keyword arguments for initialisation.
 
         '''
         if fourcc is None:
@@ -160,8 +161,9 @@ class BlockingVideoWriter(cv2.VideoWriter):
             fps = camera.get('fps')
         elif fps < 0:
             fps = camera.measure_framerate(-fps)
-            
-        return cls(filename, fourcc, fps, frameSize, isColor, apiPreference)
+
+        return cls(filename, fourcc, fps, frameSize, isColor, apiPreference,
+                   **kwargs)
 
     def __repr__(self):
         return (f'{self.__class__.__name__}(filename={repr(self.filename)}, '
@@ -197,7 +199,7 @@ class VideoWriter(BlockingVideoWriter):
         self._verbose_exit = verbose_exit
 
     def _initialise_writer(self, maxsize):
-        ''' Start the Thread for grabbing images. '''
+        ''' Start the Thread for writing images from the queue. '''
         self.max_queue_size = maxsize
         self._write_queue = Queue(maxsize=maxsize)
         self._image_writer = Thread(name='writer', target=self._writer,
@@ -238,6 +240,57 @@ class VideoWriter(BlockingVideoWriter):
         # if wait occurred, inform of completion
         if waited and self._verbose_exit:
             print(f'Writing complete in {perf_counter()-waited:.3f}s.')
+
+
+class GuaranteedVideoWriter(VideoWriter):
+    ''' A VideoWriter with guaranteed output FPS.
+
+    Repeats frames when input too slow, and skips frames when input too fast.
+
+    '''
+    def _initialise_writer(self, maxsize):
+        ''' Start the write-queue putter and getter threads. '''
+        super()._initialise_writer(maxsize)
+        self._period   = 1 / self.fps
+        self.latest    = None
+        self._finished = Event()
+        self._looper   = Thread(name='looper', target=self._write_loop,
+                                daemon=True)
+        self._looper.start()
+
+    def _write_loop(self):
+        ''' Write the latest frame to the queue, at self.fps.
+
+        Repeats frames when input too slow, and skips frames when input too fast.
+
+        '''
+        # wait until first image set, or early finish
+        while self.latest is None and not self._finished.is_set():
+            sleep(self._period / 2)
+        prev = perf_counter()
+        self._error = 0
+        delay = self._period - 5e-3
+
+        # write frames at specified rate until told to stop
+        while not self._finished.is_set():
+            super().write(self.latest)
+            new = perf_counter()
+            self._error += self._period - (new - prev)
+            delay -= self._error
+            delay = max(delay, 0) # can't go back in time
+            sleep(delay)
+            prev = new
+
+    def write(self, img):
+        ''' Set the latest image. '''
+        self.latest = img
+
+    def __exit__(self, *args):
+        self._finished.set()
+        self._looper.join()
+        if self._verbose_exit:
+            print(f'Net timing error = {self._error * 1e3:.3f}ms')
+        super().__exit__(*args)
 
 
 class OutOfFrames(StopIteration):
@@ -407,7 +460,8 @@ class ContextualVideoCapture(cv2.VideoCapture):
         for read_success, frame in self:
             if not read_success: break # camera disconnected
 
-    def record_stream(self, filename, show=True, mouse_handler=DoNothing()):
+    def record_stream(self, filename, show=True, mouse_handler=DoNothing(),
+                      writer=VideoWriter):
         ''' Capture and record stream, with optional display.
 
         'filename' is the file to save to.
@@ -416,9 +470,12 @@ class ContextualVideoCapture(cv2.VideoCapture):
         'mouse_handler' is an optional MouseCallback instance determining
             the effects of mouse clicks and moves during the stream. It is only
             useful if 'show' is set to True. Defaults to DoNothing.
+        'writer' is a subclass of VideoWriter. Defaults to VideoWriter.
+            Set to GuaranteedVideoWriter to allow repeated and skipped frames
+            to better ensure a consistent output framerate.
 
         '''
-        with VideoWriter.from_camera(filename, self) as writer, mouse_handler:
+        with writer.from_camera(filename, self) as writer, mouse_handler:
             for read_success, frame in self:
                 if read_success:
                     if show:
@@ -876,7 +933,7 @@ class VideoReader(LockedCamera):
         # enable back-stepping if not currently permitted
         vid._skip_frames = 0
         # make sure no unnecessary prints trigger from playback keys
-        vid._verbose = False 
+        vid._verbose = False
 
         # go back a step
         vid._direction = vid.REVERSE_DIRECTION
