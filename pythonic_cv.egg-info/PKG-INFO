@@ -1,13 +1,13 @@
 Metadata-Version: 2.1
 Name: pythonic-cv
-Version: 1.1.7
+Version: 1.1.8
 Summary: Performant pythonic wrapper of unnecessarily painful opencv functionality
 Home-page: https://github.com/ES-Alexander/pythonic-cv
 Author: ES-Alexander
 Author-email: sandman.esalexander@gmail.com
 License: UNKNOWN
 Description: _________________________________
-         Version: 1.1.7                  
+         Version: 1.1.8                  
          Author: ES Alexander            
          Release Date: 22/Dec/2020       
         _________________________________

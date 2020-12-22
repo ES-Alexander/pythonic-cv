@@ -254,8 +254,7 @@ class GuaranteedVideoWriter(VideoWriter):
         self._period   = 1 / self.fps
         self.latest    = None
         self._finished = Event()
-        self._looper   = Thread(name='looper', target=self._write_loop,
-                                daemon=True)
+        self._looper   = Thread(name='looper', target=self._write_loop)
         self._looper.start()
 
     def _write_loop(self):
