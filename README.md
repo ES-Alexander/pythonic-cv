@@ -1,7 +1,7 @@
 _________________________________
- Version: 1.1.6                  
+ Version: 1.1.7                  
  Author: ES Alexander            
- Release Date: 17/Oct/2020       
+ Release Date: 22/Dec/2020       
 _________________________________
 
 # About
@@ -19,7 +19,7 @@ possible while ensuring ease of use and helpful errors/documentation.
 This library requires an existing version of `OpenCV` with Python bindings to be 
 installed (e.g. `python3 -m pip install opencv-python`). Some features (mainly
 property access helpers) may not work for versions of OpenCV earlier than 4.2.0. 
-The library was tested using Python 3.7.2, and is expected to work down to at least
+The library was tested using Python 3.8.5, and is expected to work down to at least
 Python 3.4 (although the integrated advanced features example uses matmul (@) for
 some processing, which was introduced in Python 3.5).
 
@@ -74,6 +74,10 @@ process it can have CPU and power usage similar to that of `SlowCamera`.
 
 If using a video file to simulate a live camera stream, use `SlowCamera` or 
 `LockedCamera` - `Camera` will skip frames.
+
+There is also a `GuaranteedVideoWriter` class which guarantees the output framerate by
+repeating frames when given input too slowly, and skipping frames when input is too
+fast.
 
 ## Overview
 ![Overview of classes diagram](https://github.com/ES-Alexander/pythonic-cv/blob/master/Overview.png)
