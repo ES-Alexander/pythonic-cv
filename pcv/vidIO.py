@@ -460,7 +460,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
             if not read_success: break # camera disconnected
 
     def record_stream(self, filename, show=True, mouse_handler=DoNothing(),
-                      writer=VideoWriter):
+                      writer=VideoWriter, **kwargs):
         ''' Capture and record stream, with optional display.
 
         'filename' is the file to save to.
@@ -474,7 +474,8 @@ class ContextualVideoCapture(cv2.VideoCapture):
             to better ensure a consistent output framerate.
 
         '''
-        with writer.from_camera(filename, self) as writer, mouse_handler:
+        with writer.from_camera(filename, self, **kwargs) as writer, \
+             mouse_handler:
             for read_success, frame in self:
                 if read_success:
                     if show:
