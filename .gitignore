@@ -1,5 +1,7 @@
 # compiled bytecode
 __pycache__
+build/*
+**/*.egg-info
 
 # database stuff
 *.db
