@@ -7,6 +7,7 @@ from time import perf_counter, sleep
 from queue import Queue
 from threading import Thread, Event
 from pcv.interact import DoNothing, waitKey
+from source import VideoSource
 
 
 class BlockingVideoWriter(cv2.VideoWriter):
@@ -137,7 +138,7 @@ class BlockingVideoWriter(cv2.VideoWriter):
 
     @classmethod
     def from_camera(cls, filename, camera, fourcc=None, isColor=True,
-                    apiPreference=None, fps=-3, **kwargs):
+                    apiPreference=None, fps=-3, frameSize=None, **kwargs):
         ''' Returns a VideoWriter based on the properties of the input camera.
 
         'filename' is the name of the file to save to.
@@ -150,12 +151,16 @@ class BlockingVideoWriter(cv2.VideoWriter):
             If no processing is occurring, 'camera' is suggested, otherwise
             it is generally best to measure the frame output.
             Defaults to -3, to measure over 3 frames.
+        'frameSize' is an integer tuple of (width, height)/(cols, rows).
+            If left as None, uses `camera.get` to retrieve width and height.
         'kwrags' are any additional keyword arguments for initialisation.
 
         '''
         if fourcc is None:
             fourcc = cls.suggested_codec(filename)
-        frameSize = tuple(int(camera.get(dim)) for dim in ('width','height'))
+        if frameSize is None:
+            frameSize = tuple(int(camera.get(dim))
+                              for dim in ('width', 'height'))
 
         if fps == 'camera':
             fps = camera.get('fps')
@@ -302,8 +307,10 @@ class UserQuit(StopIteration):
         super().__init__(msg, *args, **kwargs)
 
 
-class ContextualVideoCapture(cv2.VideoCapture):
-    ''' A cv2.VideoCapture with a context manager for releasing. '''
+class OpenCVSource(cv2.VideoCapture):
+    ''' A class to provide opencv's VideoCapture as a VideoSource backend. '''
+    # more properties + descriptions can be found in the docs:
+    # https://docs.opencv.org/3.4/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
     properties = {
         'fps'     : cv2.CAP_PROP_FPS,
         'mode'    : cv2.CAP_PROP_MODE,
@@ -311,12 +318,26 @@ class ContextualVideoCapture(cv2.VideoCapture):
         'height'  : cv2.CAP_PROP_FRAME_HEIGHT,
         'backend' : cv2.CAP_PROP_BACKEND,
     }
-    # more properties + descriptions can be found in the docs:
-    # https://docs.opencv.org/3.4/d4/d15/group__videoio__flags__base.html#gaeb8dd9c89c10a5c63c139bf7c4f5704d
 
+    def get(self, property):
+        try:
+            return super().get(self.properties.get(property, property))
+        except TypeError: # property must be an unknown string
+            return super().get(eval('cv2.CAP_PROP_'+property.upper()))
+
+    def set(self, property, value):
+        try:
+            return super().set(self.properties.get(property, property), value)
+        except TypeError: # 'property' must be an unknown string
+            return super().set(eval('cv2.CAP_PROP_'+property.upper))
+
+
+class ContextualVideoCapture(VideoSource):
+    ''' A video-capturing class with a context manager for releasing. '''
+    
     def __init__(self, id, *args, display='frame', delay=None, quit=ord('q'),
                  play_pause=ord(' '), pause_effects={}, play_commands={},
-                 destroy=-1, **kwargs):
+                 destroy=-1, source=OpenCVSource, **kwargs):
         ''' A pausable, quitable, iterable video-capture object
             with context management.
 
@@ -353,9 +374,12 @@ class ContextualVideoCapture(cv2.VideoCapture):
             to destroy all active opencv windows, a string of a specific window
             name, or a list of window names to close. If left as -1, destroys
             the window specified in 'display'.
+        'source' is a class which acts like a video source, by implementing at
+            minimum the methods 'get', 'set', 'read', 'grab', 'retrieve',
+            'open', 'isOpened', and 'release'.
 
         '''
-        super().__init__(id, *args, **kwargs)
+        super().__init__(source, id, *args, **kwargs)
         self._id             = id
         self.display         = display
         self._delay          = delay
@@ -460,7 +484,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
             if not read_success: break # camera disconnected
 
     def record_stream(self, filename, show=True, mouse_handler=DoNothing(),
-                      writer=VideoWriter):
+                      writer=VideoWriter, **kwargs):
         ''' Capture and record stream, with optional display.
 
         'filename' is the file to save to.
@@ -474,7 +498,7 @@ class ContextualVideoCapture(cv2.VideoCapture):
             to better ensure a consistent output framerate.
 
         '''
-        with writer.from_camera(filename, self) as writer, mouse_handler:
+        with writer.from_camera(filename, self, **kwargs) as writer, mouse_handler:
             for read_success, frame in self:
                 if read_success:
                     if show:
@@ -482,20 +506,6 @@ class ContextualVideoCapture(cv2.VideoCapture):
                     writer.write(frame)
                 else:
                     break # camera disconnected
-
-    def get(self, property):
-        ''' Return the value of 'property' if it exists, else 0.0. '''
-        try:
-            return super().get(self.properties.get(property, property))
-        except TypeError: # property must be an unknown string
-            return super().get(eval('cv2.CAP_PROP_'+property.upper()))
-
-    def set(self, property, value):
-        ''' Attempts to set 'property' to 'value', returning success. '''
-        try:
-            return super().set(self.properties.get(property, property), value)
-        except TypeError: # 'property' must be an unknown string
-            return super().set(eval('cv2.CAP_PROP_'+property.upper))
 
     def read(self, image=None):
         if image is not None:
@@ -537,7 +547,7 @@ class SlowCamera(ContextualVideoCapture):
                 return count / (perf_counter() - start)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(camera_id={repr(self._id)})"
+        return f"{self.__class__.__name__}(camera_id={self._id!r})"
 
 
 class Camera(SlowCamera):
@@ -687,7 +697,7 @@ class LockedCamera(Camera):
 class VideoReader(LockedCamera):
     ''' A class for reading video files. '''
     properties = {
-        **ContextualVideoCapture.properties,
+        **OpenCVSource.properties,
         'frame'      : cv2.CAP_PROP_POS_FRAMES,
         'codec'      : cv2.CAP_PROP_FOURCC,
         'timestamp'  : cv2.CAP_PROP_POS_MSEC,

@@ -1,7 +1,7 @@
 _________________________________
- Version: 1.1.8                  
+ Version: 1.1.9                  
  Author: ES Alexander            
- Release Date: 22/Dec/2020       
+ Release Date: 26/May/2021       
 _________________________________
 
 # About
@@ -24,6 +24,7 @@ Python 3.4 (although the integrated advanced features example uses matmul (@) fo
 some processing, which was introduced in Python 3.5).
 
 `Numpy` is also used throughout, so a recent version is suggested (tested with 1.19.0).
+`mss` is used for cross-platform screen-capturing functionality (requires >= 3.0.0)
 
 # Installation
 The library can be installed from pip, with `python3 -m pip install pythonic-cv`.
@@ -32,6 +33,7 @@ The library can be installed from pip, with `python3 -m pip install pythonic-cv`
 New functionality is provided in the `pcv` module, as described below. All other 
 opencv functionality should be accessed through the standard `cv2` import.
 
+## Main Functionality
 The main implemented functionality is handling video through a context manager, 
 while also enabling iteration over the input stream. While iterating, key-bindings
 have been set up for play/pause (`SPACE`) and stopping playback (`q`). A dictionary
@@ -43,6 +45,7 @@ While paused, video can be stepped backwards and forwards using `a` and `d`. All
 default key-bindings can be overwritten using the play_commands and pause_effects
 dictionaries and the quit and play_pause variables on initialisation.
 
+## Video I/O Details
 For reading and writing video files, the `VideoReader` and `VideoWriter` classes should 
 be used. For streaming, the classes `Camera`, `SlowCamera`, and `LockedCamera` are 
 provided. The simplest of these is `SlowCamera`, which has slow iteration because image
@@ -50,7 +53,10 @@ grabbing is performed synchronously, with a blocking call while reading each fra
 `Camera` extends `SlowCamera` with additional logic to perform repeated grabbing in a
 separate thread, so processing and image grabbing can occur concurrently. `LockedCamera`
 sits between the two, providing thread based I/O but with more control over when each 
-image is taken.
+image is taken. Analogues for all three camera classes are provided in the `pcv.screen`
+module - `SlowScreen`, `Screen`, and `LockedScreen`. The interface is the same as that
+for the corresponding camera class, except that a monitor index (-1 for all) or screen 
+region is passed in instead of a camera id.
 
 `Camera` is most useful for applications with processing speeds that require the most
 up to date information possible and don't want to waste time decoding frames that are
@@ -110,6 +116,27 @@ with Camera(0) as cam:
     cam.record_stream('me.mp4')
 ```
 
+### Screen Functionality
+#### Main Monitor
+```python
+import cv2
+from pcv.screen import LockedScreen
+
+# stream monitor 0, and record to 'screen-record.mp4' file.
+with LockedScreen(0, process=lambda img: \
+                  cv2.cvtColor(img, cv2.COLOR_BGRA2BGR) as screen:
+    # video-recording requires 3-channel (BGR) or single-channel
+    #  (greyscale, isColor=False) to work
+    screen.record_stream('screen-record.mp4')
+```
+#### Screen Region
+```python
+from pcv.Screen import Screen
+
+with Screen({'left': -10, 'top': 50, 'width': 100, 'height': 200}) as screen:
+    screen.stream()
+```
+
 ### VideoReader
 ```python
 from pcv.vidIO import VideoReader
@@ -167,3 +194,15 @@ started again (in an infinite loop).
 
 To run the example use `python3 -m pcv.examples.cam_video_switch` while in a directory
 with the `.mp4` files you want to switch between.
+
+#### Hand Writer
+This uses Google's `mediapipe` library for hand detection, to show a relatively simple
+AR workflow, where a pointed right hand index finger can be used to write/draw on a
+camera feed. Once you've installed the library (`python3 -m pip install mediapipe`),
+run with `python3 -m pcv.examples.hand_write` and start drawing.
+
+The pointing detection algorithm is quite rudimentary, so may require some angling of
+your hand before it detects that the pointer finger is straight and the other fingers
+are closed. It currently intentionally only detects right hands, so your left hand can
+also be in the frame without causing issues. The side detection assumes a front-facing
+(selfie) camera, as is commonly the case with webcams and similar.
