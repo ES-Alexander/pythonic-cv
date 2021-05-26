@@ -7,7 +7,7 @@ from time import perf_counter, sleep
 from queue import Queue
 from threading import Thread, Event
 from pcv.interact import DoNothing, waitKey
-from source import VideoSource
+from pcv.source import VideoSource
 
 
 class BlockingVideoWriter(cv2.VideoWriter):

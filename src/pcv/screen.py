@@ -3,7 +3,7 @@
 import mss
 import platform
 import numpy as np
-from vidIO import ContextualVideoCapture, SlowCamera, Camera, LockedCamera
+from pcv.vidIO import ContextualVideoCapture, SlowCamera, Camera, LockedCamera
 
 Mss = mss.mss().__class__ # handle different operating systems
 DARWIN = platform.system() == 'Darwin'
