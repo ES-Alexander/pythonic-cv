@@ -498,7 +498,8 @@ class ContextualVideoCapture(VideoSource):
             to better ensure a consistent output framerate.
 
         '''
-        with writer.from_camera(filename, self, **kwargs) as writer, mouse_handler:
+        with writer.from_camera(filename, self, **kwargs) as writer, \
+             mouse_handler:
             for read_success, frame in self:
                 if read_success:
                     if show:
