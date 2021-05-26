@@ -1,5 +1,5 @@
 _________________________________
- Version: 1.2.0                  
+ Version: 1.2.1                  
  Author: ES Alexander            
  Release Date: 26/May/2021       
 _________________________________
