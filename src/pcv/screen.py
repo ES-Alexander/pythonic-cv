@@ -19,6 +19,7 @@ class ScreenSource(Mss):
             NOTE: macOS values should be half of the actual screen resolution.
 
         '''
+        self.__image = None
         super().__init__(*args, **kwargs)
         self.open(monitor)
 
