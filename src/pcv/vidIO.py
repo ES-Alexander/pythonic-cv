@@ -323,18 +323,18 @@ class OpenCVSource(cv2.VideoCapture):
         try:
             return super().get(self.properties.get(property, property))
         except TypeError: # property must be an unknown string
-            return super().get(eval('cv2.CAP_PROP_'+property.upper()))
+            return super().get(getattr(cv2, 'CAP_PROP' + property.upper()))
 
     def set(self, property, value):
         try:
             return super().set(self.properties.get(property, property), value)
         except TypeError: # 'property' must be an unknown string
-            return super().set(eval('cv2.CAP_PROP_'+property.upper))
+            return super().set(getattr(cv2, 'CAP_PROP_' + property.upper()), value)
 
 
 class ContextualVideoCapture(VideoSource):
     ''' A video-capturing class with a context manager for releasing. '''
-    
+
     def __init__(self, id, *args, display='frame', delay=None, quit=ord('q'),
                  play_pause=ord(' '), pause_effects={}, play_commands={},
                  destroy=-1, source=OpenCVSource, **kwargs):
@@ -838,6 +838,12 @@ class VideoReader(LockedCamera):
         self._pause_effects = LogDict(self._pause_effects)
 
         self._get_latest_image() # re-initialise as ready
+
+    def get(self, property):
+        return super().get(self.properties.get(property, property))
+
+    def set(self, property, value):
+        return super().set(self.properties.get(property, property), value)
 
     def _set_start(self, start):
         ''' Set the start of the video to user specification, if possible. '''
