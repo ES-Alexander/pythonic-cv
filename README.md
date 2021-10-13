@@ -165,6 +165,24 @@ with VideoReader('my_vid.mp4', auto_delay=False, skip_frames=10,
     vid.headless_stream()
 ```
 
+### Mouse Events
+```python
+# Example courtesy of @MatusGasparik in Issue#15
+import cv2
+from pcv.vidIO import VideoReader
+from pcv.interact import MouseCallback
+
+def on_mouse_click(event, x, y, flags, params=None):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print('Click', x, y)
+
+# create a window beforehand so a mouse callback can be assigned [REQUIRED]
+window = 'foo'
+cv2.namedWindow(window)
+with VideoReader('my_vid.mp4', display=window) as vid:
+    vid.stream(mouse_handler=MouseCallback(vid.display, on_mouse_click))
+```
+
 ### Advanced Examples
 Check the `pcv/examples` folder for some examples of full programs using this library.
 
