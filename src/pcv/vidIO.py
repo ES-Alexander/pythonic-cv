@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import cv2
-import signal
 import numpy as np
 from time import perf_counter, sleep
 from queue import Queue
