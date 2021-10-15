@@ -176,10 +176,7 @@ def on_mouse_click(event, x, y, flags, params=None):
     if event == cv2.EVENT_LBUTTONDOWN:
         print('Click', x, y)
 
-# create a window beforehand so a mouse callback can be assigned [REQUIRED]
-window = 'foo'
-cv2.namedWindow(window)
-with VideoReader('my_vid.mp4', display=window) as vid:
+with VideoReader('my_vid.mp4') as vid:
     vid.stream(mouse_handler=MouseCallback(vid.display, on_mouse_click))
 ```
 
