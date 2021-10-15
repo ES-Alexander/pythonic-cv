@@ -1021,7 +1021,8 @@ class VideoReader(LockedCamera):
     def timestamp(self):
         ''' Returns the video timestamp if possible, else 0.0.
 
-        Returns a human-readable time string, as hours:minutes:seconds.
+        Returns a human-readable time string, as hours:minutes:seconds,
+          or minutes:seconds if there are no hours.
         For the numerical ms value use self.get('timestamp') instead.
 
         self.timestamp -> str
@@ -1030,12 +1031,27 @@ class VideoReader(LockedCamera):
         # cv2.VideoCapture returns ms timestamp -> convert to meaningful time
         seconds          = self.get('timestamp') / 1000
         minutes, seconds = divmod(seconds, 60)
-        hours, minutes   = divmod(minutes, 60)
+        hours, minutes   = divmod(round(minutes), 60)
         if hours:
-            return f'{hours}:{minutes}:{seconds:.3f}'
-        if minutes:
-            return f'{minutes}:{seconds:.3f}'
-        return f'{seconds:.3f}s'
+            return f'{hours:02d}:{minutes:02d}:{seconds:06.3f}'
+        return f'{minutes:02d}:{seconds:06.3f}'
+        
+    @property
+    def iso_timestamp(self):
+        ''' Returns the video timestamp if possible, else 0.0.
+        
+        Timestamp is in ISO 8601 duration format: PThh:mm:ss.sss
+        For a human-readable timestamp use self.timestamp.
+        For a numerical ms value use self.get('timestamp') instead.
+        
+        self.iso_timestamp -> str
+        
+        '''
+        timestamp = self.timestamp
+        # check if hours not specified
+        if len(timestamp) == 9:
+            timestamp = '00:' + timestamp
+        return f'PT{timestamp}'
 
     def set_timestamp(self, timestamp):
         ''' Attempts to set the timestamp as specified, returns success.
