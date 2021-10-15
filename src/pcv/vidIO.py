@@ -153,7 +153,7 @@ class BlockingVideoWriter(cv2.VideoWriter):
             Defaults to -3, to measure over 3 frames.
         'frameSize' is an integer tuple of (width, height)/(cols, rows).
             If left as None, uses `camera.get` to retrieve width and height.
-        'kwrags' are any additional keyword arguments for initialisation.
+        'kwargs' are any additional keyword arguments for initialisation.
 
         '''
         if fourcc is None:
@@ -496,6 +496,9 @@ class ContextualVideoCapture(VideoSource):
         'writer' is a subclass of VideoWriter. Defaults to VideoWriter.
             Set to GuaranteedVideoWriter to allow repeated and skipped frames
             to better ensure a consistent output framerate.
+        
+        **kwargs are passed to the 'writer's from_camera method (e.g. can be used
+            to indicate the 'frameSize' or a greyscale output (isColor=False)).
 
         '''
         with writer.from_camera(filename, self, **kwargs) as writer, \
