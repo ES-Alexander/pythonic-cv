@@ -471,6 +471,9 @@ class ContextualVideoCapture(VideoSource):
             to DoNothing.
 
         '''
+        # ensure mouse_handler has something to bind to
+        cv2.namedWindow(self.display)
+        # engage mouse_handler and start the stream
         with mouse_handler:
             for read_success, frame in self:
                 if read_success:
@@ -501,6 +504,10 @@ class ContextualVideoCapture(VideoSource):
             to indicate the 'frameSize' or a greyscale output (isColor=False)).
 
         '''
+        if show:
+            # ensure mouse_handler has something to bind to
+            cv2.namedWindow(self.display)
+        # create writer, engage mouse_handler, and start the stream
         with writer.from_camera(filename, self, **kwargs) as writer, \
              mouse_handler:
             for read_success, frame in self:
