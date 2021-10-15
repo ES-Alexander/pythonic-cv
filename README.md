@@ -224,3 +224,7 @@ your hand before it detects that the pointer finger is straight and the other fi
 are closed. It currently intentionally only detects right hands, so your left hand can
 also be in the frame without causing issues. The side detection assumes a front-facing
 (selfie) camera, as is commonly the case with webcams and similar.
+
+# Contributors 💜
+
+- MatusGasparik
