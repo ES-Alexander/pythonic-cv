@@ -322,7 +322,7 @@ class OpenCVSource(cv2.VideoCapture):
         try:
             return super().get(self.properties.get(property, property))
         except TypeError: # property must be an unknown string
-            return super().get(getattr(cv2, 'CAP_PROP' + property.upper()))
+            return super().get(getattr(cv2, 'CAP_PROP_' + property.upper()))
 
     def set(self, property, value):
         try:
