@@ -650,9 +650,9 @@ class Stitcher:
                     if save_path:
                         frame = vid._frame
                 if state == k-1:
-                    images.append(img)
+                    images.append(sharpest)
                     if save_path:
-                        cv2.imwrite(f'{save_path}/{frame}.png', img)
+                        cv2.imwrite(f'{save_path}/{frame}.png', sharpest)
         return images
 
 if __name__ == '__main__':
